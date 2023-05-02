@@ -1,0 +1,6 @@
+Test Plugin
+test_plugin
+1.0
+NerdyPuzzle
+A plugin used for testing
+Made with MCreator plugin builder by NerdyPuzzle

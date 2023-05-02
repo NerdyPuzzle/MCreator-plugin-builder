@@ -1,0 +1,11 @@
+some stupid code here:
+${input$x}
+${input$y}
+${input$z}
+${input$entity}
+${input$item}
+${input$block}
+${input$direction}
+${input$boolean}
+${input$num}
+${input$txt}
