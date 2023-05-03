@@ -93,7 +93,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -143,12 +143,20 @@
     <ClInclude Include="gui_file_dialogs.h" />
     <ClInclude Include="IconsFontAwesome6.h" />
     <ClInclude Include="Plugin.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="resource1.h" />
     <ClInclude Include="rlImGui.h" />
     <ClInclude Include="rlImGuiColors.h" />
     <ClInclude Include="TextEditor.h" />
     <ClInclude Include="tinyfiledialogs.h" />
     <ClInclude Include="zip.h" />
     <ClInclude Include="ziputil.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="PluginBuilder.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\..\..\Downloads\plugin_icon.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

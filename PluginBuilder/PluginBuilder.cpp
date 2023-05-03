@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 #include <iostream>
 #include <raylib.h>
 #include <imgui.h>
@@ -57,7 +58,7 @@ std::string pluginversion;
 std::string pluginauthor;
 std::string plugindescription;
 
-bool HasDependencies(bool dependencies[12]) {
+bool HasDependencies(const bool dependencies[12]) {
     for (int i = 0; i < 12; i++)
         if (dependencies[i])
             return true;
@@ -838,6 +839,39 @@ void ExportPlugin(const Plugin plugin) {
                 }
             }
         }
+        if (!plugin.data.globaltriggers.empty()) {
+            for (const Plugin::GlobalTrigger gt : plugin.data.globaltriggers) {
+                for (const std::pair<std::string, std::string> version : gt.versions) {
+                    std::string foldername = RegistryName(version.second) + "-" + version.first;
+                    std::ofstream gt_("temp_data\\" + gt.name + version.first + version.second + ".txt");
+                    gt_ << "<#include \"procedures.java.ftl\">\n";
+                    gt_ << "@Mod.EventBusSubscriber\n";
+                    gt_ << "public class ${name}Procedure {\n";
+                    gt_ << "    @SubscribeEvent\n";
+                    gt_ << "    public static void(" + gt.event_code.at(version) + " event) {\n";
+                    gt_ << "        <#assign dependenciesCode><#compress>\n";
+                    if (HasDependencies(gt.dependencies)) {
+                        gt_ << "            <@procedureDependenciesCode dependencies, {\n";
+                        std::vector<int> deps;
+                        for (int i = 0; i < 12; i++) {
+                            if (gt.dependencies[i])
+                                deps.push_back(i);
+                        }
+                        for (int i = 0; i < deps.size(); i++) {
+                            gt_ << "            \"event." + LowerStr(plugin.Dependencies[deps[i]]) + "\": \"" + gt.dependency_mappings.at(version).at(plugin.Dependencies[deps[i]]) + "\",\n";
+                        }
+                        gt_ << "            \"event\": \"event\"\n";
+                        gt_ << "            }/>\n";
+                    }
+                    gt_ << "        </#compress></#assign>\n";
+                    gt_ << "        execute(event<#if dependenciesCode?has_content>,</#if>${dependenciesCode});\n";
+                    gt_ << "    }\n";
+                    gt_ << "}";
+                    gt_.close();
+                    zip.AddFile("temp_data\\" + gt.name + version.first + version.second + ".txt", foldername + "\\triggers\\" + RegistryName(gt.name) + ".java.ftl");
+                }
+            }
+        }
         zip.Close();
         fs::remove_all("temp_data\\");
     }
@@ -874,7 +908,10 @@ int main() {
     SetGuiTheme();
     LoadAllPlugins();
 
+    Image icon = LoadImage("plugin_icon.png");
     Texture PluginIcon = LoadTexture("plugin.png");
+
+    SetWindowIcon(icon);
 
     int selected_plugin = -1;
 
@@ -1725,6 +1762,7 @@ int main() {
         EndDrawing();
     }
 
+    UnloadImage(icon);
     UnloadTexture(PluginIcon);
 
     rlImGuiShutdown();
