@@ -55,7 +55,7 @@ public:
 		std::map<std::pair<std::string, std::string>, std::string> code;
 		std::vector<Component> components;
 		int category = 0;
-		std::string category_name;
+		std::string category_name = "Block data";
 		int type = 0;
 		int type_index = 0;
 		ImVec4 color;

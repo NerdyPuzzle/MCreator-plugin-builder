@@ -19,16 +19,6 @@ std::wstring s2ws2(const std::string str) {
 	return wstrTo;
 }
 
-/*
-TCHAR ToTchar(std::string str) {
-	//TCHAR* t = new TCHAR[str.size()];
-	TCHAR tt[512];
-	std::wstring s = s2ws2(str);
-	_tcscpy_s(tt, s.c_str());
-	return *tt;
-}
-*/ // scrapped the concept as it corrupted the heap *shrug*
-
 Zip Zip::Open(std::string path) {
 	Zip zip;
 

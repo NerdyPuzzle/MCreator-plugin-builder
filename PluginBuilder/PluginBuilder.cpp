@@ -46,6 +46,8 @@ bool addcomp = false;
 bool addcomp_set_pos = true;
 std::string component_name;
 bool change = true;
+int tabsize = 0;
+int tabsize_old = 0;
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
@@ -193,6 +195,7 @@ void SavePlugin(const Plugin* plugin) {
                 procedure << (!first ? "\n" : "") << "[VERSION] " << version.first << " " << version.second;
                 first = false;
             }
+            procedure << "\n" << pc.world_dependency;
             if (!pc.code.empty()) {
                 if (!fs::exists(pluginpath + "procedures/code/"))
                     fs::create_directory(pluginpath + "procedures/code/");
@@ -373,6 +376,8 @@ Plugin LoadPlugin(std::string path) {
                         line_.clear();
                         rtemp.clear();
                     }
+                    else if (line_.size() == 1)
+                        pc.world_dependency = (line_ == "1" ? true : false);
                 }
                 if (fs::exists(path + "procedures/code/")) {
                     for (const std::pair<std::string, std::string> version : pc.versions) {
@@ -429,6 +434,8 @@ std::string RegistryName(std::string str) {
         else if (std::isspace(str[i]))
             newstr += "_";
         else if (std::islower(str[i]))
+            newstr += str[i];
+        else
             newstr += str[i];
     }
     return newstr;
@@ -620,7 +627,7 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_from_deps\\" << '"' << "></block></value>" << '"';
                         pc_ << (std::string)(i == pc.components.size() ? "\n" : ",\n");
                     }
-                    pc_ << "    ]" + (std::string)(!pc.components.empty() ? ",\n" : "\n");
+                    pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency ? ",\n" : "\n");
                     if (!pc.components.empty()) {
                         i = 0;
                         std::vector<std::string> inputs;
@@ -650,7 +657,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!fields.empty() ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!fields.empty()) {
@@ -659,7 +666,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == fields.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!statements.empty() ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!statements.empty()) {
@@ -671,9 +678,17 @@ void ExportPlugin(const Plugin plugin) {
                                 pc_ << "        \"disable_local_variables\": " + (std::string)(disable_locals[i - 1] ? "true\n" : "false\n");
                                 pc_ << "      }\n";
                             }
-                            pc_ << "    ]\n";
+                            pc_ << "    ]" + (std::string)(pc.world_dependency ? ",\n" : "\n");
                             i = 0;
                         }
+                    }
+                    if (pc.world_dependency) {
+                        pc_ << "    \"dependencies\": [\n";
+                        pc_ << "      {\n";
+                        pc_ << "        \"name\": \"world\",\n";
+                        pc_ << "        \"type\": \"world\"\n";
+                        pc_ << "      }\n";
+                        pc_ << "    ]\n";
                     }
                     pc_ << "  }\n";
                     pc_ << "}";
@@ -858,7 +873,7 @@ void ExportPlugin(const Plugin plugin) {
                                 deps.push_back(i);
                         }
                         for (int i = 0; i < deps.size(); i++) {
-                            gt_ << "            \"event." + LowerStr(plugin.Dependencies[deps[i]]) + "\": \"" + gt.dependency_mappings.at(version).at(plugin.Dependencies[deps[i]]) + "\",\n";
+                            gt_ << "            \"" + LowerStr(plugin.Dependencies[deps[i]]) + "\": \"event." + gt.dependency_mappings.at(version).at(plugin.Dependencies[deps[i]]) + "\",\n";
                         }
                         gt_ << "            \"event\": \"event\"\n";
                         gt_ << "            }/>\n";
@@ -1476,9 +1491,12 @@ int main() {
             ImGui::SetNextWindowSize({ (float)GetScreenWidth() - 199 - offset, (float)GetScreenHeight() - 12 });
             if (ImGui::Begin("tabbar", NULL, ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDecoration)) {
                 if (ImGui::BeginTabBar("tabs", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_TabListPopupButton)) {
+                    if (open_tabs.empty())
+                        change = true;
                     for (int i = 0; i < open_tabs.size(); i++) {
                         if (ImGui::BeginTabItem(open_tab_names[i].c_str(), &open_tabs[i].open)) {
                             current_tab = i;
+                            tabsize = open_tabs.size();
 
                             float cols[4]; // stupid thing wont work in a switch
                             std::vector<std::string> categories = { "Block data", "Block management", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management", "Item procedures", "Player data", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World data", "World management", "Minecraft components", "Flow control", "Advanced" };
@@ -1500,9 +1518,9 @@ int main() {
                                 ImGui::Text("Procedure type: ");
                                 ImGui::SameLine();
                                 ImGui::PushID(1);
-                                ImGui::Combo(" ", &open_tabs[i].procedure->type, "Output\0Input");
+                                ImGui::Combo(" ", &open_tabs[i].procedure->type, "Input\0Output");
                                 if (open_tabs[i].procedure->type == 1) {
-                                    ImGui::Text("Procedure input type: ");
+                                    ImGui::Text("Procedure output type: ");
                                     ImGui::SameLine();
                                     ImGui::PushID(225);
                                     if (ImGui::BeginCombo(" ", loaded_plugin.ComponentValues[open_tabs[i].procedure->type_index].c_str())) {
@@ -1544,6 +1562,8 @@ int main() {
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
                                 ImGui::PopID();
+                                ImGui::Checkbox("Require world dependency", &open_tabs[i].procedure->world_dependency);
+                                ImGui::Spacing();
                                 ImGui::Spacing();
                                 ImGui::Text("Procedure block components");
                                 if (ImGui::BeginTabBar("args", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
@@ -1646,9 +1666,10 @@ int main() {
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
                                             current_version = l;
                                             ImGui::BeginChild(83, { ImGui::GetColumnWidth(), 500 });
-                                            if (current_tab != old_current_tab) {
+                                            if (current_tab != old_current_tab || tabsize != tabsize_old) {
                                                 change = true;
                                                 current_version = l;
+                                                tabsize = open_tabs.size();
                                             }
                                             if (current_version != old_current_version)
                                                 change = true;
@@ -1741,6 +1762,7 @@ int main() {
                                 break;
                             }
                             
+                            tabsize_old = open_tabs.size();
                             old_current_tab = i;
                             ImGui::EndTabItem();
                         }
