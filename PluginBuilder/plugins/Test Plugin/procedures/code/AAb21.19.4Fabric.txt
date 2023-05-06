@@ -4,3 +4,4 @@ hws
 hwsahahsw
 awshahwsa
 aaaaaaaaaaaaaaaaaa
+${input$x}

@@ -1,10 +1,21 @@
 fwasgwagaws
 0
-1 1 1 1
-Block dataBlock dataBlock dataBlock dataBlock data [END]
+0.681373 0.612999 0.100202 1
+why did that work [END]
+24
+wgfvawsgwasg %1 %2 %3 %4 %5 fawgfggasgw
 0
-wgfvawsgwasg
+5
+2 2 2 2 2
+egsh
 0
+hjsedhj
+1
+awsgawsg
 0
-
+hsedh
+1
+wasfaghwsg
+0
+[VERSION] 1.19.4 Forge
 1

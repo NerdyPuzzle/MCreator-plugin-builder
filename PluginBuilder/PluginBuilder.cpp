@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 #include <iostream>
 #include <raylib.h>
 #include <imgui.h>
@@ -29,10 +29,12 @@ bool deletefile_set_pos = true;
 int delete_procedure = -1;
 int delete_globaltrigger = -1;
 int delete_category = -1;
+int delete_datalist = -1;
 std::vector<const char*> tempchars_procedures;
 std::vector<const char*> tempchars_globaltriggers;
 std::vector<const char*> tempchars_categories;
-bool active[3] = { false, false, false };
+std::vector<const char*> tempchars_datalists;
+bool active[4] = { false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
 int combo_item = 0;
@@ -84,7 +86,7 @@ void SavePlugin(const Plugin* plugin) {
     std::string pluginpath = "plugins/" + plugin->data.name + "/";
     if (!DirectoryExists(pluginpath.c_str()))
         fs::create_directory(pluginpath);
-
+    
     std::ofstream info(pluginpath + "info.txt");
     info << plugin->data.name << "\n";
     info << plugin->data.id << "\n";
@@ -212,6 +214,30 @@ void SavePlugin(const Plugin* plugin) {
     else if (fs::exists(pluginpath + "procedures/"))
         fs::remove_all(pluginpath + "procedures/");
 
+    if (!plugin->data.datalists.empty()) {
+        if (!fs::exists(pluginpath + "datalists/"))
+            fs::create_directory(pluginpath + "datalists/");
+        for (const Plugin::Datalist dl : plugin->data.datalists) {
+            std::ofstream datalist(pluginpath + "datalists/" + dl.name + ".txt");
+            datalist << dl.name << "\n";
+            for (const std::string entry : dl.entries)
+                datalist << entry << "\n";
+            datalist << "[ENTRIES_END]\n";
+            datalist << dl.versions.size() << "\n";
+            datalist << dl.entries.size();
+            for (const std::pair<std::string, std::string> version : dl.versions) {
+                datalist << "\n" << version.first;
+                datalist << "\n" << version.second;
+                for (const std::string entry : dl.mappings.at(version)) {
+                    datalist << "\n" << entry;
+                }
+            }
+            datalist.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "datalists/"))
+        fs::remove_all(pluginpath + "datalists/");
+
 }
 Plugin LoadPlugin(std::string path) {
     Plugin plugin;
@@ -299,14 +325,14 @@ Plugin LoadPlugin(std::string path) {
                 procedure >> color.w;
                 pc.color = color;
                 bool first = true;
+                pc.category_name.clear();
                 while (true) { // for some damn reason std::getline doesn't want to work
                     std::string s;
                     procedure >> s;
-                    if (s != "[END]") {
-                        pc.category_name += (first ? "" : " ") + s;
-                    }
-                    else
+                    if (s == "[END]")
                         break;
+                    else
+                        pc.category_name += (first ? "" : " ") + s;
                     first = false;
                 }
                 procedure >> pc.category;
@@ -399,6 +425,40 @@ Plugin LoadPlugin(std::string path) {
                 procedure.close();
                 plugin.data.procedures.push_back(pc);
             }
+        }
+    }
+
+    if (fs::exists(path + "datalists/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "datalists/")) { // load datalists
+            std::ifstream datalist(entry.string());
+            Plugin::Datalist dl;
+            std::getline(datalist, dl.name);
+            std::string temp;
+            while (std::getline(datalist, temp)) {
+                if (!temp.empty() && temp != "[ENTRIES_END]")
+                    dl.entries.push_back(temp);
+                else if (temp == "[ENTRIES_END]")
+                    break;
+            }
+            int versioncount = 0;
+            int entrycount = 0;
+            datalist >> versioncount;
+            datalist >> entrycount;
+            for (int i = 0; i < versioncount; i++) {
+                std::pair<std::string, std::string> version;
+                datalist >> version.first;
+                datalist >> version.second;
+                dl.versions.push_back(version);
+                for (int j = 0; j < entrycount; j++) {
+                    datalist >> temp;
+                    dl.mappings[version].push_back(temp);
+                    std::getline(datalist, temp);
+                    dl.mappings[version][dl.mappings[version].size() - 1].append(temp);
+                    temp.clear();
+                }
+            }
+            datalist.close();
+            plugin.data.datalists.push_back(dl);
         }
     }
 
@@ -810,11 +870,25 @@ void ExportPlugin(const Plugin plugin) {
                 lang << "trigger." + RegistryName(gt.name) + "=" + gt.name + "\n";
             }
         }
+        if (!plugin.data.datalists.empty()) {
+            zip.AddFolder("datalists");
+            for (const Plugin::Datalist dl : plugin.data.datalists) {
+                std::ofstream dl_("temp_data\\" + dl.name + ".txt");
+                bool firstentry = true;
+                for (int i = 0; i < dl.entries.size(); i++) {
+                    dl_ << (firstentry ? "" : "\n") << "- " << dl.entries[i];
+                    firstentry = false;
+                }
+                dl_.close();
+                zip.AddFile("temp_data\\" + dl.name + ".txt", "datalists\\" + dl.name + ".yaml");
+            }
+        }
         lang.close();
         zip.AddFile("temp_data\\texts.properties", "lang\\texts.properties");
         std::vector<std::string> versions;
         std::vector<std::string> triggerversions;
         std::vector<std::string> procedureversions;
+        std::vector<std::string> datalistversions;
         if (!plugin.data.procedures.empty()) {
             for (const Plugin::Procedure pc : plugin.data.procedures) {
                 if (!pc.versions.empty()) {
@@ -839,12 +913,26 @@ void ExportPlugin(const Plugin plugin) {
                 }
             }
         }
+        if (!plugin.data.datalists.empty()) {
+            for (const Plugin::Datalist dl : plugin.data.datalists) {
+                if (!dl.versions.empty()) {
+                    for (const std::pair<std::string, std::string> version : dl.versions) {
+                        std::string version_str = RegistryName(version.second) + "-" + version.first;
+                        if (std::find(versions.begin(), versions.end(), version_str) == versions.end())
+                            versions.push_back(version_str);
+                        datalistversions.push_back(version_str);
+                    }
+                }
+            }
+        }
         for (const std::string vers : versions) {
             zip.AddFolder(vers);
             if (std::find(procedureversions.begin(), procedureversions.end(), vers) != procedureversions.end())
                 zip.AddFolder(vers + "\\procedures");
             if (std::find(triggerversions.begin(), triggerversions.end(), vers) != triggerversions.end())
                 zip.AddFolder(vers + "\\triggers");
+            if (std::find(datalistversions.begin(), datalistversions.end(), vers) != datalistversions.end())
+                zip.AddFolder(vers + "\\mappings");
         }
         if (!plugin.data.procedures.empty()) {
             for (const Plugin::Procedure pc : plugin.data.procedures) {
@@ -887,6 +975,21 @@ void ExportPlugin(const Plugin plugin) {
                 }
             }
         }
+        if (!plugin.data.datalists.empty()) {
+            for (const Plugin::Datalist dl : plugin.data.datalists) {
+                for (const std::pair<std::string, std::string> version : dl.versions) {
+                    std::string foldername = RegistryName(version.second) + "-" + version.first;
+                    std::ofstream dl_("temp_data\\" + dl.name + version.first + version.second + ".txt");
+                    bool firstline = true;
+                    for (int k = 0; k < dl.entries.size(); k++) {
+                        dl_ << (firstline ? "" : "\n") << dl.entries.at(k) << ": " + dl.mappings.at(version).at(k);
+                        firstline = false;
+                    }
+                    dl_.close();
+                    zip.AddFile("temp_data\\" + dl.name + version.first + version.second + ".txt", foldername + "\\mappings\\" + dl.name + ".yaml");
+                }
+            }
+        }
         zip.Close();
         fs::remove_all("temp_data\\");
     }
@@ -897,7 +1000,7 @@ void ExportPlugin(const Plugin plugin) {
 
 // tab windows stuff
 enum WindowType {
-    PROCEDURE, GLOBALTRIGGER, CATEGORY
+    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST
 };
 struct TabWindow {
     WindowType type;
@@ -905,6 +1008,7 @@ struct TabWindow {
     Plugin::Procedure* procedure;
     Plugin::GlobalTrigger* globaltrigger;
     Plugin::Category* category;
+    Plugin::Datalist* datalist;
 };
 std::vector<TabWindow> open_tabs;
 std::vector<std::string> open_tab_names;
@@ -990,6 +1094,8 @@ int main() {
                         selected_plugin = -1;
                         pluginmenu = true;
                         MaximizeWindow();
+                        std::string title = "Plugin Builder - [" + loaded_plugin.data.name + "]";
+                        SetWindowTitle(title.c_str());
                     }
                 if (ImGui::Button("Delete", { ImGui::GetColumnWidth(), 50 }))
                     if (selected_plugin != -1) {
@@ -1150,6 +1256,7 @@ int main() {
                         open_tabs.clear();
                         open_tab_names.clear();
                         mainmenu = true;
+                        SetWindowTitle("Plugin Builder");
                     }
                     ImGui::EndMenu();
                 }
@@ -1159,7 +1266,7 @@ int main() {
             if (deletefile) {
                 ImGui::OpenPopup("Delete file");
                 if (deletefile_set_pos) {
-                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 177) / 2 });
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 215) / 2 });
                     for (int j = 0; j < loaded_plugin.data.procedures.size(); j++) {
                         tempchars_procedures.push_back(loaded_plugin.data.procedures[j].name.c_str());
                     }
@@ -1169,41 +1276,62 @@ int main() {
                     for (int j = 0; j < loaded_plugin.data.categories.size(); j++) {
                         tempchars_categories.push_back(loaded_plugin.data.categories[j].name.c_str());
                     }
+                    for (int j = 0; j < loaded_plugin.data.datalists.size(); j++) {
+                        tempchars_datalists.push_back(loaded_plugin.data.datalists[j].name.c_str());
+                    }
                 }
                 deletefile_set_pos = false;
-                ImGui::SetNextWindowSize({ 300, 177 });
+                ImGui::SetNextWindowSize({ 300, 215 });
                 if (ImGui::BeginPopupModal("Delete file", &deletefile, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                     if (delete_procedure != -1 && !active[0]) {
                         delete_globaltrigger = -1;
                         delete_category = -1;
+                        delete_datalist = -1;
                         active[0] = true;
                         active[1] = false;
                         active[2] = false;
+                        active[3] = false;
                     }
                     else if (delete_globaltrigger != -1 && !active[1]) {
                         delete_procedure = -1;
                         delete_category = -1;
+                        delete_datalist = -1;
                         active[1] = true;
                         active[0] = false;
                         active[2] = false;
+                        active[3] = false;
                     }
                     else if (delete_category != -1 && !active[2]) {
                         delete_procedure = -1;
                         delete_globaltrigger = -1;
+                        delete_datalist = -1;
                         active[2] = true;
+                        active[1] = false;
+                        active[0] = false;
+                        active[3] = false;
+                    }
+                    else if (delete_datalist != -1 && !active[3]) {
+                        delete_procedure = -1;
+                        delete_globaltrigger = -1;
+                        delete_category = -1;
+                        active[3] = true;
+                        active[2] = false;
                         active[1] = false;
                         active[0] = false;
                     }
 
                     ImGui::Text("Procedures");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::ListBox("wsgawsg", &delete_procedure, tempchars_procedures.data(), loaded_plugin.data.procedures.size());
+                    ImGui::ListBox("procedures", &delete_procedure, tempchars_procedures.data(), loaded_plugin.data.procedures.size());
                     ImGui::Text("Global Triggers");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::ListBox("hawsh", &delete_globaltrigger, tempchars_globaltriggers.data(), loaded_plugin.data.globaltriggers.size());
+                    ImGui::ListBox("globaltriggers", &delete_globaltrigger, tempchars_globaltriggers.data(), loaded_plugin.data.globaltriggers.size());
                     ImGui::Text("Blockly Categories");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::ListBox("ejse", &delete_category, tempchars_categories.data(), loaded_plugin.data.categories.size());
+                    ImGui::ListBox("categories", &delete_category, tempchars_categories.data(), loaded_plugin.data.categories.size());
+                    ImGui::Text("Datalists");
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::ListBox("datalists", &delete_datalist, tempchars_datalists.data(), loaded_plugin.data.datalists.size());
 
                     if (delete_procedure != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name)]) != open_tab_names.end())
@@ -1223,10 +1351,17 @@ int main() {
                         else
                             file_open = false;
                     }
+                    else if (delete_datalist != -1) {
+                        if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.datalists[delete_datalist].name)]) != open_tab_names.end())
+                            file_open = true;
+                        else
+                            file_open = false;
+                    }
 
                     ImGui::SetCursorPosX(100);
                     if (ImGui::Button("Delete", { 100, 30 })) {
                         if (delete_procedure != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/procedures/" + loaded_plugin.data.procedures[delete_procedure].name + ".txt");
                             loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name));
                             loaded_plugin.data.procedures.erase(loaded_plugin.data.procedures.begin() + delete_procedure);
                             tempchars_procedures.erase(tempchars_procedures.begin() + delete_procedure);
@@ -1243,7 +1378,13 @@ int main() {
                             loaded_plugin.data.categories.erase(loaded_plugin.data.categories.begin() + delete_category);
                             tempchars_categories.erase(tempchars_categories.begin() + delete_category);
                         }
-                        if (delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 && !file_open) {
+                        else if (delete_datalist != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/datalists/" + loaded_plugin.data.datalists[delete_datalist].name + ".txt");
+                            loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.datalists[delete_datalist].name));
+                            loaded_plugin.data.datalists.erase(loaded_plugin.data.datalists.begin() + delete_datalist);
+                            tempchars_datalists.erase(tempchars_datalists.begin() + delete_datalist);
+                        }
+                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1) && !file_open) {
                             SavePlugin(&loaded_plugin);
                             deletefile = false;
                         }
@@ -1263,13 +1404,15 @@ int main() {
                 delete_procedure = -1;
                 delete_globaltrigger = -1;
                 delete_category = -1;
-                active[0] = false; active[1] = false; active[2] = false;
+                active[0] = false; active[1] = false; active[2] = false; active[3] = false;
                 if (!tempchars_procedures.empty())
                     tempchars_procedures.clear();
                 if (!tempchars_globaltriggers.empty())
                     tempchars_globaltriggers.clear();
                 if (!tempchars_categories.empty())
                     tempchars_categories.clear();
+                if (!tempchars_datalists.empty())
+                    tempchars_datalists.clear();
                 if (file_open)
                     file_open = false;
             }
@@ -1284,17 +1427,18 @@ int main() {
                 ImGui::SetNextWindowSize({ 300, 120 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("New file", &addfile, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category");
+                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist");
                     ImGui::Spacing();
                     ImGui::AlignTextToFramePadding();
                     ImGui::Text("Name: "); ImGui::SameLine();
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::PushID(1);
-                    ImGui::InputText(" ", &file_name);
+                    ImGui::InputText(" ", &file_name, (combo_item == 3 ? ImGuiInputTextFlags_CharsNoBlank : ImGuiInputTextFlags_None));
                     ImGui::PopID();
                     ImGui::Spacing();
                     ImGui::SetCursorPosX(100);
                     bool should_add = std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), file_name) == loaded_plugin.data.filenames.end();
+                    bool tabs_open = !open_tabs.empty();
                     if (ImGui::Button("Add", { 100, 30 })) {
                         if (should_add && !file_name.empty()) {
                             TabWindow window;
@@ -1314,7 +1458,7 @@ int main() {
                                 loaded_plugin.data.globaltriggers.push_back(trigger);
                                 window.globaltrigger = &loaded_plugin.data.globaltriggers[loaded_plugin.data.globaltriggers.size() - 1];
                             }
-                            else {
+                            else if (combo_item == 2) {
                                 window.type = CATEGORY;
                                 Plugin::Category category;
                                 category.name = file_name;
@@ -1323,16 +1467,23 @@ int main() {
                                 loaded_plugin.data.categories.push_back(category);
                                 window.category = &loaded_plugin.data.categories[loaded_plugin.data.categories.size() - 1];
                             }
+                            else if (combo_item == 3) {
+                                window.type = DATALIST;
+                                Plugin::Datalist datalist;
+                                datalist.name = file_name;
+                                loaded_plugin.data.datalists.push_back(datalist);
+                                window.datalist = &loaded_plugin.data.datalists[loaded_plugin.data.datalists.size() - 1];
+                            }
+                            loaded_plugin.data.filenames.push_back(file_name);
                             open_tabs.push_back(window);
                             open_tab_names.push_back(file_name);
-                            loaded_plugin.data.filenames.push_back(file_name);
                             addfile = false;
                             SavePlugin(&loaded_plugin);
                         }
                     }
-                    if (!should_add && ImGui::IsItemHovered()) {
+                    if ((!should_add || tabs_open) && ImGui::IsItemHovered()) {
                         if (ImGui::BeginTooltip()) {
-                            ImGui::Text("File name already exists!");
+                            ImGui::Text(!tabs_open ? "File name already exists!" : "Cannot make new files while tabs are open.");
                             ImGui::EndTooltip();
                         }
                     }
@@ -1379,6 +1530,10 @@ int main() {
                             open_tabs[current_tab].procedure->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
                             addversion = false;
                             code_editor.SetText("");
+                        }
+                        else if (versiontype == DATALIST) {
+                            open_tabs[current_tab].datalist->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
+                            addversion = false;
                         }
                     }
                     if (tooltip && ImGui::IsItemHovered()) {
@@ -1483,6 +1638,23 @@ int main() {
                         }
                     }
                 }
+                if (ImGui::CollapsingHeader("Datalists")) {
+                    if (!loaded_plugin.data.datalists.empty()) {
+                        for (Plugin::Datalist& datalist : loaded_plugin.data.datalists) {
+                            ImGui::Bullet();
+                            ImGui::SameLine();
+                            if (ImGui::MenuItem(datalist.name.c_str())) {
+                                if (std::find(open_tab_names.begin(), open_tab_names.end(), datalist.name) == open_tab_names.end()) {
+                                    TabWindow window;
+                                    window.type = DATALIST;
+                                    window.datalist = &datalist;
+                                    open_tabs.push_back(window);
+                                    open_tab_names.push_back(datalist.name);
+                                }
+                            }
+                        }
+                    }
+                }
                 ImGui::End();
             }
 
@@ -1499,6 +1671,8 @@ int main() {
                             tabsize = open_tabs.size();
 
                             float cols[4]; // stupid thing wont work in a switch
+                            int entryID = 888;
+                            int mappingID = 4999;
                             std::vector<std::string> categories = { "Block data", "Block management", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management", "Item procedures", "Player data", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World data", "World management", "Minecraft components", "Flow control", "Advanced" };
                             if (open_tabs[i].type == PROCEDURE) {
                                 cols[0] = open_tabs[i].procedure->color.x;
@@ -1510,6 +1684,61 @@ int main() {
                             }
 
                             switch (open_tabs[i].type) {
+                            case DATALIST:
+                                ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Datalist name: ");
+                                ImGui::SameLine();
+                                ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::Spacing();
+                                ImGui::Text("Datalist entries");
+                                if (ImGui::Button("Add entry"))
+                                    open_tabs[i].datalist->entries.push_back("");
+                                ImGui::SameLine();
+                                if (ImGui::Button("Remove entry"))
+                                    if (!open_tabs[i].datalist->entries.empty())
+                                        open_tabs[i].datalist->entries.pop_back();
+                                if (!open_tabs[i].datalist->entries.empty()) {
+                                    ImGui::BeginChild(42, { 600, 200 });
+                                    for (std::string& entry : open_tabs[i].datalist->entries) {
+                                        ImGui::PushID(entryID);
+                                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                                        ImGui::InputText(" ", &entry, ImGuiInputTextFlags_CharsNoBlank);
+                                        ImGui::PopID();
+                                        entryID++;
+                                    }
+                                    ImGui::EndChild();
+                                }
+                                ImGui::Spacing();
+                                ImGui::Text("Entry mappings");
+                                if (ImGui::BeginTabBar("mappings", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
+                                    if (ImGui::TabItemButton("+")) {
+                                        addversion = true;
+                                        versiontype = DATALIST;
+                                    }
+                                    for (int j = 0; j < open_tabs[i].datalist->versions.size(); j++) {
+                                        std::string tabname_dl = open_tabs[i].datalist->versions[j].first + " " + open_tabs[i].datalist->versions[j].second;
+                                        if (ImGui::BeginTabItem(tabname_dl.c_str())) {
+                                            ImGui::Spacing();
+                                            while (open_tabs[i].datalist->entries.size() > open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]].size())
+                                                open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]].push_back("");
+                                            for (int l = 0; l < open_tabs[i].datalist->entries.size(); l++) {
+                                                std::string entryStr = open_tabs[i].datalist->entries[l] + ": ";
+                                                ImGui::AlignTextToFramePadding();
+                                                ImGui::Text(entryStr.c_str());
+                                                ImGui::SameLine();
+                                                ImGui::PushID(mappingID);
+                                                ImGui::InputText(" ", &open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]][l]);
+                                                ImGui::PopID();
+                                                mappingID++;
+                                            }
+                                            mappingID = 4999;
+                                            ImGui::EndTabItem();
+                                        }
+                                    }
+                                    ImGui::EndTabBar();
+                                }
+                                break;
                             case PROCEDURE:
                                 ImGui::Spacing();
                                 ImGui::Text("Procedure name: ");
@@ -1570,7 +1799,7 @@ int main() {
                                     if (ImGui::TabItemButton("+")) {
                                         addcomp = true;
                                     }
-                                    for (int j = 0; j < open_tabs[i].procedure->components.size(); j++) {
+                                    for (int j = 0; j < open_tabs[i].procedure->components.size() && !open_tabs[i].procedure->components.empty(); j++) {
                                         if (ImGui::BeginTabItem(open_tabs[i].procedure->components[j].name.c_str(), &open_tabs[i].procedure->components[j].open)) {
                                             ImGui::Spacing();
                                             ImGui::Text("Component name: ");
@@ -1661,7 +1890,7 @@ int main() {
                                         addversion = true;
                                         versiontype = PROCEDURE;
                                     }
-                                    for (int l = 0; l < open_tabs[i].procedure->versions.size(); l++) {
+                                    for (int l = 0; l < open_tabs[i].procedure->versions.size() && !open_tabs[i].procedure->versions.empty(); l++) {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
                                             current_version = l;

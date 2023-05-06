@@ -74,6 +74,13 @@ public:
 		std::string name;
 	};
 
+	struct Datalist {
+		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> entries;
+		std::map<std::pair<std::string, std::string>, std::vector<std::string>> mappings;
+		std::string name;
+	};
+
 private:
 	struct Data {
 		std::string name;
@@ -87,6 +94,7 @@ private:
 		std::vector<Category> categories;
 		std::vector<Procedure> procedures;
 		std::vector<GlobalTrigger> globaltriggers;
+		std::vector<Datalist> datalists;
 		std::vector<std::string> filenames;
 	};
 
