@@ -1,0 +1,18 @@
+gfwsag
+0
+0.431996 0.79902 0.105753 1
+wafs [END]
+17
+wfjwaigwjaigiwjgij %1 %2 %3
+0
+3
+1 0 0
+gaghwsga
+entity
+Entity
+2
+gwsg
+Boolean
+4
+[VERSION] 1.19.4 Forge
+1

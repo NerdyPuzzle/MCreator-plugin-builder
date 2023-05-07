@@ -1,0 +1,11 @@
+Get mining speed
+1
+0.701961 0.627451 0.211765 1
+Mining speed procedures [END]
+17
+Get the mining speed of the player
+5
+0
+[VERSION] 1.19.2 Forge
+[VERSION] 1.19.4 Forge
+0

@@ -1,8 +1,8 @@
 awsfwsagfg
 0
-1 1 1 1
-Block data [END]
-0
+0.426471 0.305219 0.305219 1
+wafs [END]
+17
 0
 0
 0

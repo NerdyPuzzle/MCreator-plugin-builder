@@ -3,6 +3,7 @@
 #include <vector>
 #include <map>
 #include <imgui.h>
+#include <deque>
 
 class Plugin {
 
@@ -78,6 +79,9 @@ public:
 		std::vector<std::pair<std::string, std::string>> versions; // version, generator
 		std::vector<std::string> entries;
 		std::map<std::pair<std::string, std::string>, std::vector<std::string>> mappings;
+		std::map<std::pair<std::string, std::string>, std::deque<bool>> exclusions;
+		std::string title;
+		std::string message;
 		std::string name;
 	};
 

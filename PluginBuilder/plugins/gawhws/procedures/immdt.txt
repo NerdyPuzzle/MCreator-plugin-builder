@@ -1,0 +1,14 @@
+immdt
+0
+0.331747 0.773076 0.867647 1
+wafs [END]
+17
+testentity %1
+0
+1
+0
+immediatesourceentity
+Entity
+2
+[VERSION] 1.19.4 Forge
+1

@@ -1,0 +1,14 @@
+Testtt
+0
+0.661765 0.285467 0.396143 1
+wafs [END]
+17
+entity %1
+0
+1
+0
+gedgg
+Entity
+2
+[VERSION] 1.19.4 Forge
+0

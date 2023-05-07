@@ -1,0 +1,6 @@
+Mining speed plugin
+mining_speed_plugin
+1.0
+NerdyPuzzle
+A plugin that allows for changing mining speed
+Made with MCreator plugin builder by NerdyPuzzle

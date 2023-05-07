@@ -1,0 +1,3 @@
+Mining speed procedures
+0
+0.70098 0.629225 0.213043 1

@@ -1,8 +1,8 @@
 awgwsg
 0
-1 1 1 1
-Block data [END]
-0
+0.184448 0.34891 0.495098 1
+wafs [END]
+17
 0
 0
 0

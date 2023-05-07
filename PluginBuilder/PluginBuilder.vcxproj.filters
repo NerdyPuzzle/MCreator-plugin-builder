@@ -24,12 +24,6 @@
     <ClCompile Include="Plugin.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TextEditor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="LanguageDefinitions.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="zip.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -56,9 +50,6 @@
     <ClInclude Include="Plugin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TextEditor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="GuiTheme.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -78,6 +69,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pluginicon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pluginimage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

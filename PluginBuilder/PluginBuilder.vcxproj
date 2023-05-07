@@ -91,9 +91,10 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -128,11 +129,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="LanguageDefinitions.cpp" />
     <ClCompile Include="Plugin.cpp" />
     <ClCompile Include="PluginBuilder.cpp" />
     <ClCompile Include="rlImGui.cpp" />
-    <ClCompile Include="TextEditor.cpp" />
     <ClCompile Include="tinyfiledialogs.cpp" />
     <ClCompile Include="zip.cpp" />
     <ClCompile Include="ziputil.cpp" />
@@ -143,11 +142,12 @@
     <ClInclude Include="gui_file_dialogs.h" />
     <ClInclude Include="IconsFontAwesome6.h" />
     <ClInclude Include="Plugin.h" />
+    <ClInclude Include="pluginicon.h" />
+    <ClInclude Include="pluginimage.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="resource1.h" />
     <ClInclude Include="rlImGui.h" />
     <ClInclude Include="rlImGuiColors.h" />
-    <ClInclude Include="TextEditor.h" />
     <ClInclude Include="tinyfiledialogs.h" />
     <ClInclude Include="zip.h" />
     <ClInclude Include="ziputil.h" />

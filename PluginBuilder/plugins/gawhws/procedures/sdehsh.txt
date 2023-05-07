@@ -1,8 +1,8 @@
 sdehsh
 0
-1 1 1 1
-Block data [END]
-0
+0.598039 0.020521 0.020521 1
+wafs [END]
+17
 zsvzsv
 0
 0

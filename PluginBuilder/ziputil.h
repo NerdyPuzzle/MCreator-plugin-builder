@@ -3,6 +3,8 @@
 
 std::wstring s2ws2(std::string str);
 
+void RunExe(std::string path);
+
 class Zip {
 public:
 	static Zip Create(std::string path);

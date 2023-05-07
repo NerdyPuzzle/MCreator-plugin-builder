@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
-//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 #include <iostream>
 #include <raylib.h>
 #include <imgui.h>
@@ -11,9 +11,10 @@
 #include <fstream>
 #include "rlImGuiColors.h"
 #include <sstream>
-#include "TextEditor.h"
 #include "ziputil.h"
 #include "gui_file_dialogs.h"
+#include "pluginicon.h"
+#include "pluginimage.h"
 
 namespace fs = std::filesystem;
 
@@ -50,10 +51,15 @@ std::string component_name;
 bool change = true;
 int tabsize = 0;
 int tabsize_old = 0;
+bool mcreator_path_set = false;
+std::string mcreator_path;
+bool running_with_mcreator = false;
+std::vector<std::string> mapping_clipboard;
+std::vector<std::string> triggercode_clipboard;
+std::string pluginsdir = (std::string)getenv("USERPROFILE") + "\\.mcreator\\plugins\\";
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
-TextEditor code_editor;
 
 // plugin properties variables
 std::string pluginname;
@@ -231,7 +237,12 @@ void SavePlugin(const Plugin* plugin) {
                 for (const std::string entry : dl.mappings.at(version)) {
                     datalist << "\n" << entry;
                 }
+                for (const bool exc : dl.exclusions.at(version)) {
+                    datalist << "\n" << exc;
+                }
             }
+            datalist << "\n" << dl.title;
+            datalist << "\n" << dl.message;
             datalist.close();
         }
     }
@@ -456,7 +467,20 @@ Plugin LoadPlugin(std::string path) {
                     dl.mappings[version][dl.mappings[version].size() - 1].append(temp);
                     temp.clear();
                 }
+                for (int j = 0; j < entrycount; j++) {
+                    bool exc;
+                    datalist >> exc;
+                    dl.exclusions[version].push_back(exc);
+                }
             }
+            temp.clear();
+            datalist >> dl.title;
+            std::getline(datalist, temp);
+            dl.title.append(temp);
+            datalist >> dl.message;
+            temp.clear();
+            std::getline(datalist, temp);
+            dl.message.append(temp);
             datalist.close();
             plugin.data.datalists.push_back(dl);
         }
@@ -471,7 +495,14 @@ void LoadAllPlugins() {
                 plugins.push_back(LoadPlugin(entry.string() + "\\"));
         }
     }
-    code_editor.SetLanguageDefinition(TextEditor::LanguageDefinition::Json());
+    if (!fs::exists("settings/"))
+        fs::create_directory("settings/");
+    std::ifstream mc_path("settings/mcreator.txt");
+    if (mc_path.is_open()) {
+        mcreator_path_set = true;
+        std::getline(mc_path, mcreator_path);
+    }
+    mc_path.close();
 }
 int IndexOf(const std::vector<std::string> data_, const std::string& element) {
     auto it = std::find(data_.begin(), data_.end(), element);
@@ -508,12 +539,16 @@ std::string LowerStr(std::string str) {
 }
 void ExportPlugin(const Plugin plugin) {
     char path[1024] = { 0 };
-    int result = GuiFileDialog(DIALOG_SAVE_FILE, "Export plugin", path, "*.zip", "MCreator plugin (*.zip)");
+    std::string mcreator_plugins_path;
+    int result = (!running_with_mcreator ? GuiFileDialog(DIALOG_SAVE_FILE, "Export plugin", path, "*.zip", "MCreator plugin (*.zip)") : 1);
     if (result == 1) {
+        if (running_with_mcreator)
+            mcreator_plugins_path = pluginsdir + plugin.data.id + ".zip";
         fs::create_directory("temp_data");
         std::ofstream lang("temp_data\\texts.properties");
         std::ofstream pjson("temp_data\\plugin.json");
-        Zip zip = Zip::Create((std::string)path);
+        Zip zip = Zip::Create((!running_with_mcreator ? (std::string)path : mcreator_plugins_path));
+        running_with_mcreator = false;
         zip.AddFolder("lang");
         ////////////////////////
         pjson << "{\n";
@@ -679,12 +714,22 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "logic_boolean\\" << '"' << ">" << "<field name=" << "\\" << '"' << "BOOL\\" << '"' << ">TRUE</field>" << "</block></value>" << '"';
                         else if (comp.component_value == "Text")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "text\\" << '"' << ">" << "<field name=" << "\\" << '"' << "TEXT\\" << '"' << ">text</field>" << "</block></value>" << '"';
-                        else if (comp.component_value == "Block")
+                        else if (comp.component_value == "Block" && comp.name != "providedblockstate")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_allblocks\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
-                        else if (comp.component_value == "Item")
+                        else if (comp.component_value == "Block" && comp.name == "providedblockstate")
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "blockstate_from_deps\\" << '"' << "></block></value>" << '"';
+                        else if (comp.component_value == "Item" && comp.name != "provideditemstack")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_all\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
-                        else if (comp.component_value == "Entity")
+                        else if (comp.component_value == "Item" && comp.name == "provideditemstack")
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' <<  "itemstack_to_mcitem\\" << '"' << "></block></value>" << '"';
+                        else if (comp.component_value == "Entity" && comp.name != "sourceentity" && comp.name != "immediatesourceentity" && comp.name != "noentity")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_from_deps\\" << '"' << "></block></value>" << '"';
+                        else if (comp.component_value == "Entity" && comp.name == "sourceentity")
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "source_entity_from_deps\\" << '"' << "></block></value>" << '"';
+                        else if (comp.component_value == "Entity" && comp.name == "immediatesourceentity")
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "immediate_source_entity_from_deps\\" << '"' << "></block></value>" << '"';
+                        else if (comp.component_value == "Entity" && comp.name == "noentity")
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_none\\" << '"' << "></block></value>" << '"';
                         pc_ << (std::string)(i == pc.components.size() ? "\n" : ",\n");
                     }
                     pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency ? ",\n" : "\n");
@@ -880,6 +925,8 @@ void ExportPlugin(const Plugin plugin) {
                     firstentry = false;
                 }
                 dl_.close();
+                lang << "dialog.selector." + dl.name + ".title=" + dl.title + "\n";
+                lang << "dialog.selector." + dl.name + ".message=" + dl.message + "\n";
                 zip.AddFile("temp_data\\" + dl.name + ".txt", "datalists\\" + dl.name + ".yaml");
             }
         }
@@ -951,7 +998,7 @@ void ExportPlugin(const Plugin plugin) {
                     gt_ << "@Mod.EventBusSubscriber\n";
                     gt_ << "public class ${name}Procedure {\n";
                     gt_ << "    @SubscribeEvent\n";
-                    gt_ << "    public static void(" + gt.event_code.at(version) + " event) {\n";
+                    gt_ << "    public static void onEventTriggered(" + gt.event_code.at(version) + " event) {\n";
                     gt_ << "        <#assign dependenciesCode><#compress>\n";
                     if (HasDependencies(gt.dependencies)) {
                         gt_ << "            <@procedureDependenciesCode dependencies, {\n";
@@ -968,8 +1015,7 @@ void ExportPlugin(const Plugin plugin) {
                     }
                     gt_ << "        </#compress></#assign>\n";
                     gt_ << "        execute(event<#if dependenciesCode?has_content>,</#if>${dependenciesCode});\n";
-                    gt_ << "    }\n";
-                    gt_ << "}";
+                    gt_ << "    }";
                     gt_.close();
                     zip.AddFile("temp_data\\" + gt.name + version.first + version.second + ".txt", foldername + "\\triggers\\" + RegistryName(gt.name) + ".java.ftl");
                 }
@@ -982,8 +1028,10 @@ void ExportPlugin(const Plugin plugin) {
                     std::ofstream dl_("temp_data\\" + dl.name + version.first + version.second + ".txt");
                     bool firstline = true;
                     for (int k = 0; k < dl.entries.size(); k++) {
-                        dl_ << (firstline ? "" : "\n") << dl.entries.at(k) << ": " + dl.mappings.at(version).at(k);
-                        firstline = false;
+                        if (!dl.exclusions.at(version).at(k)) {
+                            dl_ << (firstline ? "" : "\n") << dl.entries.at(k) << ": " + dl.mappings.at(version).at(k);
+                            firstline = false;
+                        }
                     }
                     dl_.close();
                     zip.AddFile("temp_data\\" + dl.name + version.first + version.second + ".txt", foldername + "\\mappings\\" + dl.name + ".yaml");
@@ -1027,8 +1075,19 @@ int main() {
     SetGuiTheme();
     LoadAllPlugins();
 
-    Image icon = LoadImage("plugin_icon.png");
-    Texture PluginIcon = LoadTexture("plugin.png");
+    Image icon = { 0 };
+    icon.height = PLUGINICON_HEIGHT;
+    icon.width = PLUGINICON_WIDTH;
+    icon.format = PLUGINICON_FORMAT;
+    icon.data = PLUGINICON_DATA;
+    icon.mipmaps = 1;
+    Image icon_temp = { 0 };
+    icon_temp.height = PLUGINIMAGE_HEIGHT;
+    icon_temp.width = PLUGINIMAGE_WIDTH;
+    icon_temp.format = PLUGINIMAGE_FORMAT;
+    icon_temp.data = PLUGINIMAGE_DATA;
+    icon_temp.mipmaps = 1;
+    Texture PluginIcon = LoadTextureFromImage(icon_temp);
 
     SetWindowIcon(icon);
 
@@ -1246,9 +1305,6 @@ int main() {
                     if (ImGui::MenuItem("Save")) {
                         SavePlugin(&loaded_plugin);
                     }
-                    if (ImGui::MenuItem("Export")) {
-                        ExportPlugin(loaded_plugin);
-                    }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Close")) {
                         SavePlugin(&loaded_plugin);
@@ -1256,7 +1312,36 @@ int main() {
                         open_tabs.clear();
                         open_tab_names.clear();
                         mainmenu = true;
+                        if (mcreator_path_set) {
+                            if (fs::exists(mcreator_path + "\\plugins\\" + loaded_plugin.data.id + ".zip"))
+                                fs::remove(mcreator_path + "\\plugins\\" + loaded_plugin.data.id + ".zip");
+                        }
                         SetWindowTitle("Plugin Builder");
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Build")) {
+                    if (ImGui::MenuItem("Set MCreator path")) {
+                        char path[1024] = { 0 };
+                        int result = GuiFileDialog(DIALOG_OPEN_DIRECTORY, "Select MCreator folder", path, nullptr, nullptr);
+                        if (result == 1) {
+                            mcreator_path_set = true;
+                            mcreator_path = (std::string)path;
+                            std::ofstream out("settings\\mcreator.txt");
+                            out << (std::string)path;
+                            out.close();
+                        }
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Export")) {
+                        ExportPlugin(loaded_plugin);
+                    }
+                    if (ImGui::MenuItem("Run with MCreator", NULL, nullptr, mcreator_path_set)) {
+                        running_with_mcreator = true;
+                        if (fs::exists(pluginsdir + loaded_plugin.data.id + ".zip"))
+                            fs::remove(pluginsdir + loaded_plugin.data.id + ".zip");
+                        ExportPlugin(loaded_plugin);
+                        RunExe(mcreator_path + "\\mcreator.exe");
                     }
                     ImGui::EndMenu();
                 }
@@ -1440,7 +1525,7 @@ int main() {
                     bool should_add = std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), file_name) == loaded_plugin.data.filenames.end();
                     bool tabs_open = !open_tabs.empty();
                     if (ImGui::Button("Add", { 100, 30 })) {
-                        if (should_add && !file_name.empty()) {
+                        if (should_add && !tabs_open && !file_name.empty()) {
                             TabWindow window;
                             if (combo_item == 0) {
                                 window.type = PROCEDURE;
@@ -1529,7 +1614,6 @@ int main() {
                         else if (versiontype == PROCEDURE) {
                             open_tabs[current_tab].procedure->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
                             addversion = false;
-                            code_editor.SetText("");
                         }
                         else if (versiontype == DATALIST) {
                             open_tabs[current_tab].datalist->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
@@ -1690,6 +1774,16 @@ int main() {
                                 ImGui::Text("Datalist name: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::Text("Datalist selector title: ");
+                                ImGui::SameLine();
+                                ImGui::PushID(232);
+                                ImGui::InputText(" ", &open_tabs[i].datalist->title);
+                                ImGui::PopID();
+                                ImGui::Text("Datalist selector message: ");
+                                ImGui::SameLine();
+                                ImGui::PushID(4828);
+                                ImGui::InputText(" ", &open_tabs[i].datalist->message);
+                                ImGui::PopID();
                                 ImGui::Spacing();
                                 ImGui::Text("Datalist entries");
                                 if (ImGui::Button("Add entry"))
@@ -1722,6 +1816,8 @@ int main() {
                                             ImGui::Spacing();
                                             while (open_tabs[i].datalist->entries.size() > open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]].size())
                                                 open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]].push_back("");
+                                            while (open_tabs[i].datalist->entries.size() > open_tabs[i].datalist->exclusions[open_tabs[i].datalist->versions[j]].size())
+                                                open_tabs[i].datalist->exclusions[open_tabs[i].datalist->versions[j]].push_back(false);
                                             for (int l = 0; l < open_tabs[i].datalist->entries.size(); l++) {
                                                 std::string entryStr = open_tabs[i].datalist->entries[l] + ": ";
                                                 ImGui::AlignTextToFramePadding();
@@ -1729,10 +1825,25 @@ int main() {
                                                 ImGui::SameLine();
                                                 ImGui::PushID(mappingID);
                                                 ImGui::InputText(" ", &open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]][l]);
+                                                ImGui::SameLine();
+                                                ImGui::Checkbox("Exclude this entry", &open_tabs[i].datalist->exclusions[open_tabs[i].datalist->versions[j]][l]);
                                                 ImGui::PopID();
                                                 mappingID++;
                                             }
                                             mappingID = 4999;
+                                            if (ImGui::Button("Copy mappings")) {
+                                                if (!mapping_clipboard.empty())
+                                                    mapping_clipboard.clear();
+                                                for (int l = 0; l < open_tabs[i].datalist->entries.size(); l++)
+                                                    mapping_clipboard.push_back(open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]][l]);
+                                            }
+                                            ImGui::SameLine();
+                                            if (ImGui::Button("Paste mappings")) {
+                                                if (!mapping_clipboard.empty()) {
+                                                    for (int l = 0; l < open_tabs[i].datalist->entries.size(); l++)
+                                                        open_tabs[i].datalist->mappings[open_tabs[i].datalist->versions[j]][l] = mapping_clipboard[l];
+                                                }
+                                            }
                                             ImGui::EndTabItem();
                                         }
                                     }
@@ -1894,23 +2005,7 @@ int main() {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
                                             current_version = l;
-                                            ImGui::BeginChild(83, { ImGui::GetColumnWidth(), 500 });
-                                            if (current_tab != old_current_tab || tabsize != tabsize_old) {
-                                                change = true;
-                                                current_version = l;
-                                                tabsize = open_tabs.size();
-                                            }
-                                            if (current_version != old_current_version)
-                                                change = true;
-                                            if (change) {
-                                                code_editor.SetText("");
-                                                code_editor.SetText(open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]]);
-                                                change = false;
-                                            }
-                                            code_editor.Render("code"); // last thing to implement, code editor and saving the code templates (obviously exporting to a zip too)
-                                            if (!code_editor.GetText().empty())
-                                                open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] = code_editor.GetText();
-                                            ImGui::EndChild();
+                                            ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]], {ImGui::GetColumnWidth(), 400}, ImGuiInputTextFlags_AllowTabInput);
                                             old_current_version = l;
                                             ImGui::EndTabItem();
                                         }
@@ -1970,6 +2065,29 @@ int main() {
                                                     }
                                                 }
                                                 ImGui::EndGroup();
+                                                if (ImGui::Button("Copy code")) {
+                                                    if (!triggercode_clipboard.empty())
+                                                        triggercode_clipboard.clear();
+                                                    for (int j = 0; j < 12; j++) {
+                                                        if (open_tabs[i].globaltrigger->dependencies[j]) {
+                                                            triggercode_clipboard.push_back(open_tabs[i].globaltrigger->dependency_mappings[version][loaded_plugin.Dependencies[j]]);
+                                                        }
+                                                    }
+                                                    triggercode_clipboard.push_back(open_tabs[i].globaltrigger->event_code[version]);
+                                                }
+                                                ImGui::SameLine();
+                                                if (ImGui::Button("Paste code")) {
+                                                    if (!triggercode_clipboard.empty()) {
+                                                        int n = 0;
+                                                        for (int j = 0; j < 12; j++) {
+                                                            if (open_tabs[i].globaltrigger->dependencies[j]) {
+                                                                open_tabs[i].globaltrigger->dependency_mappings[version][loaded_plugin.Dependencies[j]] = triggercode_clipboard[n];
+                                                                n++;
+                                                            }
+                                                        }
+                                                        open_tabs[i].globaltrigger->event_code[version] = triggercode_clipboard[triggercode_clipboard.size() - 1];
+                                                    }
+                                                }
                                             }
                                             ImGui::EndTabItem();
                                         }
@@ -2013,8 +2131,14 @@ int main() {
         EndDrawing();
     }
 
-    UnloadImage(icon);
     UnloadTexture(PluginIcon);
+
+    if (pluginmenu) {
+        if (mcreator_path_set) {
+            if (fs::exists(pluginsdir + loaded_plugin.data.id + ".zip"))
+                fs::remove(pluginsdir + loaded_plugin.data.id + ".zip");
+        }
+    }
 
     rlImGuiShutdown();
     CloseWindow();

@@ -19,6 +19,10 @@ std::wstring s2ws2(const std::string str) {
 	return wstrTo;
 }
 
+void RunExe(std::string path) {
+	ShellExecute(NULL, L"open", s2ws2(path).c_str(), NULL, NULL, SW_SHOWDEFAULT);
+}
+
 Zip Zip::Open(std::string path) {
 	Zip zip;
 
