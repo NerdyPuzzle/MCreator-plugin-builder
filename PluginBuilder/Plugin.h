@@ -43,6 +43,9 @@ public:
 		bool disable_localvars = false;
 		bool checkbox_checked = false;
 		bool open = true;
+		int width = 0;
+		int height = 0;
+		std::string source;
 	};
 
 	struct Category {
@@ -53,8 +56,10 @@ public:
 
 	struct Procedure {
 		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
 		std::map<std::pair<std::string, std::string>, std::string> code;
 		std::vector<Component> components;
+		std::vector<std::string> component_names;
 		int category = 0;
 		std::string category_name = "Block data";
 		int type = 0;
@@ -67,6 +72,7 @@ public:
 
 	struct GlobalTrigger {
 		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
 		std::map<std::pair<std::string, std::string>, std::string> event_code;
 		std::map<std::pair<std::string, std::string>, std::map<std::string, std::string>> dependency_mappings;
 		bool dependencies[12] = {false, false, false, false, false, false, false, false, false, false, false, false};
@@ -77,11 +83,18 @@ public:
 
 	struct Datalist {
 		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
 		std::vector<std::string> entries;
 		std::map<std::pair<std::string, std::string>, std::vector<std::string>> mappings;
 		std::map<std::pair<std::string, std::string>, std::deque<bool>> exclusions;
 		std::string title;
 		std::string message;
+		std::string name;
+	};
+
+	struct Translation {
+		std::vector<std::pair<std::string, std::string>> keys;
+		std::string language;
 		std::string name;
 	};
 
@@ -99,6 +112,7 @@ private:
 		std::vector<Procedure> procedures;
 		std::vector<GlobalTrigger> globaltriggers;
 		std::vector<Datalist> datalists;
+		std::vector<Translation> translations;
 		std::vector<std::string> filenames;
 	};
 

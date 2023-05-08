@@ -15,6 +15,12 @@
 #include "gui_file_dialogs.h"
 #include "pluginicon.h"
 #include "pluginimage.h"
+#include "sourceentity.h"
+#include "immediatesourceentity.h"
+#include "noentity.h"
+#include "provideditemstack.h"
+#include "providedblockstate.h"
+#include "xyz.h"
 
 namespace fs = std::filesystem;
 
@@ -31,11 +37,13 @@ int delete_procedure = -1;
 int delete_globaltrigger = -1;
 int delete_category = -1;
 int delete_datalist = -1;
+int delete_translation = -1;
 std::vector<const char*> tempchars_procedures;
 std::vector<const char*> tempchars_globaltriggers;
 std::vector<const char*> tempchars_categories;
 std::vector<const char*> tempchars_datalists;
-bool active[4] = { false, false, false, false };
+std::vector<const char*> tempchars_translations;
+bool active[5] = { false, false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
 int combo_item = 0;
@@ -57,6 +65,9 @@ bool running_with_mcreator = false;
 std::vector<std::string> mapping_clipboard;
 std::vector<std::string> triggercode_clipboard;
 std::string pluginsdir = (std::string)getenv("USERPROFILE") + "\\.mcreator\\plugins\\";
+bool help_procedures = false;
+bool help_procedures_set_pos = true;
+std::vector<std::string> translationkey_clipboard;
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
@@ -181,6 +192,7 @@ void SavePlugin(const Plugin* plugin) {
                     procedure << "\n" << comp.value_int;
                     break;
                 case 1:
+                case 6:
                     break;
                 case 2:
                     procedure << "\n" << comp.checkbox_checked;
@@ -195,6 +207,11 @@ void SavePlugin(const Plugin* plugin) {
                     break;
                 case 5:
                     procedure << "\n" << comp.disable_localvars;
+                    break;
+                case 7:
+                    procedure << "\n" << comp.source;
+                    procedure << "\n" << comp.width;
+                    procedure << "\n" << comp.height;
                     break;
                 }
             }
@@ -248,6 +265,23 @@ void SavePlugin(const Plugin* plugin) {
     }
     else if (fs::exists(pluginpath + "datalists/"))
         fs::remove_all(pluginpath + "datalists/");
+
+    if (!plugin->data.translations.empty()) {
+        if (!fs::exists(pluginpath + "translations/"))
+            fs::create_directory(pluginpath + "translations/");
+        for (const Plugin::Translation tl : plugin->data.translations) {
+            std::ofstream translation(pluginpath + "translations/" + tl.name + ".txt");
+            translation << tl.name;
+            translation << "\n" << tl.language;
+            for (int i = 0; i < tl.keys.size(); i++) {
+                translation << "\n" << tl.keys[i].first;
+                translation << "\n" << tl.keys[i].second;
+            }
+            translation.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "translations/"))
+        fs::remove_all(pluginpath + "translations/");
 
 }
 Plugin LoadPlugin(std::string path) {
@@ -309,6 +343,7 @@ Plugin LoadPlugin(std::string path) {
                 }
             }
             for (std::pair<std::string, std::string> version : gt.versions) {
+                gt.version_names.push_back(version.first + version.second);
                 std::getline(trigger, gt.event_code[version]);
                 for (int i = 0; i < 12; i++) {
                     if (gt.dependencies[i]) {
@@ -373,6 +408,7 @@ Plugin LoadPlugin(std::string path) {
                         procedure >> comp.value_int;
                         break;
                     case 1:
+                    case 6:
                         break;
                     case 2:
                         procedure >> comp.checkbox_checked;
@@ -397,7 +433,16 @@ Plugin LoadPlugin(std::string path) {
                     case 5:
                         procedure >> comp.disable_localvars;
                         break;
+                    case 7:
+                        procedure >> comp.source;
+                        std::getline(procedure, temp);
+                        comp.source.append(temp);
+                        temp.clear();
+                        procedure >> comp.width;
+                        procedure >> comp.height;
+                        break;
                     }
+                    pc.component_names.push_back(comp.name);
                     pc.components.push_back(comp);
                 }
                 std::string rtemp;
@@ -418,6 +463,7 @@ Plugin LoadPlugin(std::string path) {
                 }
                 if (fs::exists(path + "procedures/code/")) {
                     for (const std::pair<std::string, std::string> version : pc.versions) {
+                        pc.version_names.push_back(version.first + version.second);
                         std::ifstream code_in(path + "procedures/code/" + pc.name + version.first + version.second + ".txt");
                         bool first_ = true;
                         bool blank = true;
@@ -459,6 +505,7 @@ Plugin LoadPlugin(std::string path) {
                 std::pair<std::string, std::string> version;
                 datalist >> version.first;
                 datalist >> version.second;
+                dl.version_names.push_back(version.first + version.second);
                 dl.versions.push_back(version);
                 for (int j = 0; j < entrycount; j++) {
                     datalist >> temp;
@@ -483,6 +530,23 @@ Plugin LoadPlugin(std::string path) {
             dl.message.append(temp);
             datalist.close();
             plugin.data.datalists.push_back(dl);
+        }
+    }
+
+    if (fs::exists(path + "translations/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "translations/")) { // load translations
+            std::ifstream translation(entry.string());
+            Plugin::Translation tl;
+            std::getline(translation, tl.name);
+            std::getline(translation, tl.language);
+            while (!translation.eof()) {
+                std::pair<std::string, std::string> keypair;
+                std::getline(translation, keypair.first);
+                std::getline(translation, keypair.second);
+                tl.keys.push_back(keypair);
+            }
+            translation.close();
+            plugin.data.translations.push_back(tl);
         }
     }
 
@@ -636,11 +700,20 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "      \"type\": \"input_statement\",\n";
                             pc_ << "      \"name\": \"" + comp.name + "\"\n";
                             break;
+                        case 6:
+                            pc_ << "      \"type\": \"input_dummy\"\n";
+                            break;
+                        case 7:
+                            pc_ << "      \"type\": \"field_image\",\n";
+                            pc_ << "      \"src\": \"" + comp.source + "\",\n";
+                            pc_ << "      \"width\": \"" + std::to_string(comp.width) + "\",\n";
+                            pc_ << "      \"height\": \"" + std::to_string(comp.height) + "\"\n";
+                            break;
                         }
                         pc_ << "    }" + (std::string)(i == pc.components.size() ? "\n" : ",\n");
                     }
                     pc_ << "  ],\n";
-                    pc_ << "  \"inputsInLine\": true,\n";
+                    pc_ << "  \"inputsInline\": true,\n";
                     if (pc.type == 0) { // output
                         pc_ << "  \"previousStatement\": null,\n";
                         pc_ << "  \"nextStatement\": null,\n";
@@ -753,6 +826,9 @@ void ExportPlugin(const Plugin plugin) {
                             case 5:
                                 statements.push_back(comp.name);
                                 disable_locals.push_back(comp.disable_localvars);
+                                break;
+                            case 6:
+                            case 7:
                                 break;
                             }
                         }
@@ -930,6 +1006,16 @@ void ExportPlugin(const Plugin plugin) {
                 zip.AddFile("temp_data\\" + dl.name + ".txt", "datalists\\" + dl.name + ".yaml");
             }
         }
+        if (!plugin.data.translations.empty()) {
+            for (const Plugin::Translation tl : plugin.data.translations) {
+                std::ofstream tl_("temp_data\\" + tl.name + ".txt");
+                for (int i = 0; i < tl.keys.size(); i++) {
+                    tl_ << tl.keys[i].first << "=" << tl.keys[i].second << "\n";
+                }
+                tl_.close();
+                zip.AddFile("temp_data\\" + tl.name + ".txt", "lang\\texts_" + tl.language + ".properties");
+            }
+        }
         lang.close();
         zip.AddFile("temp_data\\texts.properties", "lang\\texts.properties");
         std::vector<std::string> versions;
@@ -1048,7 +1134,7 @@ void ExportPlugin(const Plugin plugin) {
 
 // tab windows stuff
 enum WindowType {
-    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST
+    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION
 };
 struct TabWindow {
     WindowType type;
@@ -1057,6 +1143,7 @@ struct TabWindow {
     Plugin::GlobalTrigger* globaltrigger;
     Plugin::Category* category;
     Plugin::Datalist* datalist;
+    Plugin::Translation* translation;
 };
 std::vector<TabWindow> open_tabs;
 std::vector<std::string> open_tab_names;
@@ -1087,7 +1174,49 @@ int main() {
     icon_temp.format = PLUGINIMAGE_FORMAT;
     icon_temp.data = PLUGINIMAGE_DATA;
     icon_temp.mipmaps = 1;
+    Image sourceentity_temp = { 0 };
+    sourceentity_temp.height = SOURCEENTITY_HEIGHT;
+    sourceentity_temp.width = SOURCEENTITY_WIDTH;
+    sourceentity_temp.format = SOURCEENTITY_FORMAT;
+    sourceentity_temp.data = SOURCEENTITY_DATA;
+    sourceentity_temp.mipmaps = 1;
+    Image immediatesourceentity_temp = { 0 };
+    immediatesourceentity_temp.height = IMMEDIATESOURCEENTITY_HEIGHT;
+    immediatesourceentity_temp.width = IMMEDIATESOURCEENTITY_WIDTH;
+    immediatesourceentity_temp.format = IMMEDIATESOURCEENTITY_FORMAT;
+    immediatesourceentity_temp.data = IMMEDIATESOURCEENTITY_DATA;
+    immediatesourceentity_temp.mipmaps = 1;
+    Image noentity_temp = { 0 };
+    noentity_temp.height = NOENTITY_HEIGHT;
+    noentity_temp.width = NOENTITY_WIDTH;
+    noentity_temp.format = NOENTITY_FORMAT;
+    noentity_temp.data = NOENTITY_DATA;
+    noentity_temp.mipmaps = 1;
+    Image provideditemstack_temp = { 0 };
+    provideditemstack_temp.height = PROVIDEDITEMSTACK_HEIGHT;
+    provideditemstack_temp.width = PROVIDEDITEMSTACK_WIDTH;
+    provideditemstack_temp.format = PROVIDEDITEMSTACK_FORMAT;
+    provideditemstack_temp.data = PROVIDEDITEMSTACK_DATA;
+    provideditemstack_temp.mipmaps = 1;
+    Image providedblockstate_temp = { 0 };
+    providedblockstate_temp.height = PROVIDEDBLOCKSTATE_HEIGHT;
+    providedblockstate_temp.width = PROVIDEDBLOCKSTATE_WIDTH;
+    providedblockstate_temp.format = PROVIDEDBLOCKSTATE_FORMAT;
+    providedblockstate_temp.data = PROVIDEDBLOCKSTATE_DATA;
+    providedblockstate_temp.mipmaps = 1;
+    Image xyz_temp = { 0 };
+    xyz_temp.height = XYZ_HEIGHT;
+    xyz_temp.width = XYZ_WIDTH;
+    xyz_temp.format = XYZ_FORMAT;
+    xyz_temp.data = XYZ_DATA;
+    xyz_temp.mipmaps = 1;
     Texture PluginIcon = LoadTextureFromImage(icon_temp);
+    Texture Sourceentity = LoadTextureFromImage(sourceentity_temp);
+    Texture Immediatesourceentity = LoadTextureFromImage(immediatesourceentity_temp);
+    Texture Noentity = LoadTextureFromImage(noentity_temp);
+    Texture Provideditemstack = LoadTextureFromImage(provideditemstack_temp);
+    Texture Providedblockstate = LoadTextureFromImage(providedblockstate_temp);
+    Texture Xyz = LoadTextureFromImage(xyz_temp);
 
     SetWindowIcon(icon);
 
@@ -1345,6 +1474,12 @@ int main() {
                     }
                     ImGui::EndMenu();
                 }
+                if (ImGui::BeginMenu("Help")) {
+                    if (ImGui::MenuItem("Procedures")) {
+                        help_procedures = true;
+                    }
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMainMenuBar();
             } // implement menu bar later
 
@@ -1364,6 +1499,9 @@ int main() {
                     for (int j = 0; j < loaded_plugin.data.datalists.size(); j++) {
                         tempchars_datalists.push_back(loaded_plugin.data.datalists[j].name.c_str());
                     }
+                    for (int j = 0; j < loaded_plugin.data.translations.size(); j++) {
+                        tempchars_translations.push_back(loaded_plugin.data.translations[j].name.c_str());
+                    }
                 }
                 deletefile_set_pos = false;
                 ImGui::SetNextWindowSize({ 300, 215 });
@@ -1372,37 +1510,45 @@ int main() {
                         delete_globaltrigger = -1;
                         delete_category = -1;
                         delete_datalist = -1;
+                        delete_translation = -1;
                         active[0] = true;
                         active[1] = false;
                         active[2] = false;
                         active[3] = false;
+                        active[4] = false;
                     }
                     else if (delete_globaltrigger != -1 && !active[1]) {
                         delete_procedure = -1;
                         delete_category = -1;
                         delete_datalist = -1;
+                        delete_translation = -1;
                         active[1] = true;
                         active[0] = false;
                         active[2] = false;
                         active[3] = false;
+                        active[4] = false;
                     }
                     else if (delete_category != -1 && !active[2]) {
                         delete_procedure = -1;
                         delete_globaltrigger = -1;
                         delete_datalist = -1;
+                        delete_translation = -1;
                         active[2] = true;
                         active[1] = false;
                         active[0] = false;
                         active[3] = false;
+                        active[4] = false;
                     }
                     else if (delete_datalist != -1 && !active[3]) {
                         delete_procedure = -1;
                         delete_globaltrigger = -1;
                         delete_category = -1;
+                        delete_translation = -1;
                         active[3] = true;
                         active[2] = false;
                         active[1] = false;
                         active[0] = false;
+                        active[4] = false;
                     }
 
                     ImGui::Text("Procedures");
@@ -1417,6 +1563,9 @@ int main() {
                     ImGui::Text("Datalists");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::ListBox("datalists", &delete_datalist, tempchars_datalists.data(), loaded_plugin.data.datalists.size());
+                    ImGui::Text("Translations");
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::ListBox("translations", &delete_translation, tempchars_translations.data(), loaded_plugin.data.translations.size());
 
                     if (delete_procedure != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name)]) != open_tab_names.end())
@@ -1438,6 +1587,12 @@ int main() {
                     }
                     else if (delete_datalist != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.datalists[delete_datalist].name)]) != open_tab_names.end())
+                            file_open = true;
+                        else
+                            file_open = false;
+                    }
+                    else if (delete_translation != -1) {
+                        if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.translations[delete_translation].name)]) != open_tab_names.end())
                             file_open = true;
                         else
                             file_open = false;
@@ -1469,7 +1624,13 @@ int main() {
                             loaded_plugin.data.datalists.erase(loaded_plugin.data.datalists.begin() + delete_datalist);
                             tempchars_datalists.erase(tempchars_datalists.begin() + delete_datalist);
                         }
-                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1) && !file_open) {
+                        else if (delete_translation != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/translations/" + loaded_plugin.data.translations[delete_translation].name + ".txt");
+                            loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.translations[delete_translation].name));
+                            loaded_plugin.data.translations.erase(loaded_plugin.data.translations.begin() + delete_translation);
+                            tempchars_translations.erase(tempchars_translations.begin() + delete_translation);
+                        }
+                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1) && !file_open) {
                             SavePlugin(&loaded_plugin);
                             deletefile = false;
                         }
@@ -1489,7 +1650,8 @@ int main() {
                 delete_procedure = -1;
                 delete_globaltrigger = -1;
                 delete_category = -1;
-                active[0] = false; active[1] = false; active[2] = false; active[3] = false;
+                delete_translation = -1;
+                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false;
                 if (!tempchars_procedures.empty())
                     tempchars_procedures.clear();
                 if (!tempchars_globaltriggers.empty())
@@ -1498,6 +1660,8 @@ int main() {
                     tempchars_categories.clear();
                 if (!tempchars_datalists.empty())
                     tempchars_datalists.clear();
+                if (!tempchars_translations.empty())
+                    tempchars_translations.clear();
                 if (file_open)
                     file_open = false;
             }
@@ -1512,7 +1676,7 @@ int main() {
                 ImGui::SetNextWindowSize({ 300, 120 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("New file", &addfile, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist");
+                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation");
                     ImGui::Spacing();
                     ImGui::AlignTextToFramePadding();
                     ImGui::Text("Name: "); ImGui::SameLine();
@@ -1558,6 +1722,13 @@ int main() {
                                 datalist.name = file_name;
                                 loaded_plugin.data.datalists.push_back(datalist);
                                 window.datalist = &loaded_plugin.data.datalists[loaded_plugin.data.datalists.size() - 1];
+                            }
+                            else if (combo_item == 4) {
+                                window.type = TRANSLATION;
+                                Plugin::Translation translation;
+                                translation.name = file_name;
+                                loaded_plugin.data.translations.push_back(translation);
+                                window.translation = &loaded_plugin.data.translations[loaded_plugin.data.translations.size() - 1];
                             }
                             loaded_plugin.data.filenames.push_back(file_name);
                             open_tabs.push_back(window);
@@ -1606,17 +1777,33 @@ int main() {
                     ImGui::Spacing();
                     ImGui::SetCursorPosX(100);
                     bool tooltip = generator_type == 1 && versiontype == GLOBALTRIGGER;
-                    if (ImGui::Button("Add", { 100, 30 })) {
+                    bool should_add = false;
+                    if (versiontype == PROCEDURE) {
+                        should_add = std::find(open_tabs[current_tab].procedure->version_names.begin(), open_tabs[current_tab].procedure->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].procedure->version_names.end();
+                    }
+                    else if (versiontype == GLOBALTRIGGER) {
+                        should_add = std::find(open_tabs[current_tab].globaltrigger->version_names.begin(), open_tabs[current_tab].globaltrigger->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].globaltrigger->version_names.end();
+                    }
+                    else if (versiontype == DATALIST) {
+                        should_add = std::find(open_tabs[current_tab].datalist->version_names.begin(), open_tabs[current_tab].datalist->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].datalist->version_names.end();
+                    }
+                    else {
+                        should_add = true;
+                    }
+                    if (ImGui::Button("Add", { 100, 30 }) && should_add) {
                         if (versiontype == GLOBALTRIGGER && !tooltip) {
                             open_tabs[current_tab].globaltrigger->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
+                            open_tabs[current_tab].globaltrigger->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
                             addversion = false;
                         }
                         else if (versiontype == PROCEDURE) {
                             open_tabs[current_tab].procedure->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
+                            open_tabs[current_tab].procedure->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
                             addversion = false;
                         }
                         else if (versiontype == DATALIST) {
                             open_tabs[current_tab].datalist->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
+                            open_tabs[current_tab].datalist->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
                             addversion = false;
                         }
                     }
@@ -1625,6 +1812,12 @@ int main() {
                         ImGui::Text("Global triggers not supported for Fabric generator.");
                         ImGui::EndTooltip();
                     }
+                    else if (!should_add && ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("A template of this version already exists!");
+                        ImGui::EndTooltip();
+                    }
+                    ImGui::End();
                 }
             }
             else {
@@ -1651,18 +1844,123 @@ int main() {
                     ImGui::InputText(" ", &component_name, ImGuiInputTextFlags_CharsNoBlank);
                     ImGui::Spacing();
                     ImGui::SetCursorPosX(100);
-                    if (ImGui::Button("Add", { 100, 30 })) {
+                    bool should_add = std::find(open_tabs[current_tab].procedure->component_names.begin(), open_tabs[current_tab].procedure->component_names.end(), component_name) == open_tabs[current_tab].procedure->component_names.end();
+                    if (ImGui::Button("Add", { 100, 30 }) && should_add) {
                         Plugin::Component comp;
                         comp.name = component_name;
+                        open_tabs[current_tab].procedure->component_names.push_back(comp.name);
                         open_tabs[current_tab].procedure->components.push_back(comp);
                         addcomp = false;
                     }
+                    if (!should_add && ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("A component with this name already exists!");
+                        ImGui::EndTooltip();
+                    }
+                    ImGui::End();
                 }
             }
             else {
                 addcomp_set_pos = true;
                 if (!component_name.empty())
                     component_name.clear();
+            }
+
+            if (help_procedures) {
+                if (help_procedures_set_pos) {
+                    if (!ImGui::IsPopupOpen("Procedures help"))
+                        ImGui::OpenPopup("Procedures help");
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 400) / 2, (float)(GetScreenHeight() - 500) / 2 });
+                }
+                help_procedures_set_pos = false;
+                ImGui::SetNextWindowSize({ 400, 500 }, ImGuiCond_Once);
+                if (ImGui::BeginPopupModal("Procedures help", &help_procedures, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                    if (ImGui::BeginTabBar("pchelp")) {
+                        if (ImGui::BeginTabItem("Colors")) {
+                            ImGui::Spacing();
+                            ImGui::Text("Block procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 153, 96, 255 })))
+                                ImGui::SetClipboardText("#999960");
+                            ImGui::Text("Item procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 96, 105, 255 })))
+                                ImGui::SetClipboardText("#996069");
+                            ImGui::Text("Math procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 105, 153, 255 })))
+                                ImGui::SetClipboardText("#606999");
+                            ImGui::Text("Logic procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 124, 153, 255 })))
+                                ImGui::SetClipboardText("#607c99");
+                            ImGui::Text("Entity procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 138, 153, 255 })))
+                                ImGui::SetClipboardText("#608a99");
+                            ImGui::Text("Player procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 153, 148, 255 })))
+                                ImGui::SetClipboardText("#609994");
+                            ImGui::Text("Direction procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 115, 96, 255 })))
+                                ImGui::SetClipboardText("#997360");
+                            ImGui::Text("World procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 129, 96, 255 })))
+                                ImGui::SetClipboardText("#998160");
+                            ImGui::Text("Text procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 153, 134, 255 })))
+                                ImGui::SetClipboardText("#609986");
+                            ImGui::Text("Projectile procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 96, 153, 255 })))
+                                ImGui::SetClipboardText("#996099");
+                            ImGui::Text("GUI procedures color: ");
+                            ImGui::SameLine();
+                            if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 105, 153, 96, 255 })))
+                                ImGui::SetClipboardText("#699960");
+                            ImGui::EndTabItem();
+                        }
+                        if (ImGui::BeginTabItem("Component names")) {
+                            ImGui::Spacing();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4);
+                            ImGui::Text("sourceentity: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 15);
+                            rlImGuiImage(&Sourceentity);
+                            ImGui::Text("immediatesourceentity: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 15);
+                            rlImGuiImage(&Immediatesourceentity);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+                            ImGui::Text("noentity: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 20);
+                            rlImGuiImage(&Noentity);
+                            ImGui::Text("provideditemstack: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 15);
+                            rlImGuiImage(&Provideditemstack);
+                            ImGui::Text("providedblockstate: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 18);
+                            rlImGuiImage(&Providedblockstate);
+                            ImGui::Text("x | y | z: ");
+                            ImGui::SameLine();
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 17);
+                            rlImGuiImage(&Xyz);
+                            ImGui::EndTabItem();
+                        }
+                        ImGui::EndTabBar();
+                    }
+                    ImGui::End();
+                }
+            }
+            else {
+                help_procedures_set_pos = true;
             }
 
             // directory tree
@@ -1739,6 +2037,23 @@ int main() {
                         }
                     }
                 }
+                if (ImGui::CollapsingHeader("Translations")) {
+                    if (!loaded_plugin.data.translations.empty()) {
+                        for (Plugin::Translation& translation : loaded_plugin.data.translations) {
+                            ImGui::Bullet();
+                            ImGui::SameLine();
+                            if (ImGui::MenuItem(translation.name.c_str())) {
+                                if (std::find(open_tab_names.begin(), open_tab_names.end(), translation.name) == open_tab_names.end()) {
+                                    TabWindow window;
+                                    window.type = TRANSLATION;
+                                    window.translation = &translation;
+                                    open_tabs.push_back(window);
+                                    open_tab_names.push_back(translation.name);
+                                }
+                            }
+                        }
+                    }
+                }
                 ImGui::End();
             }
 
@@ -1768,6 +2083,60 @@ int main() {
                             }
 
                             switch (open_tabs[i].type) {
+                            case TRANSLATION:
+                                ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Translation name: ");
+                                ImGui::SameLine();
+                                ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Localization: ");
+                                ImGui::SameLine();
+                                ImGui::PushID(2);
+                                ImGui::InputTextWithHint(" ", "fr_FR", &open_tabs[i].translation->language, ImGuiInputTextFlags_CharsNoBlank);
+                                ImGui::PopID();
+                                ImGui::Spacing();
+                                ImGui::Text("Translation entries");
+                                if (ImGui::Button("Add entry")) {
+                                    open_tabs[i].translation->keys.push_back({ "", "" });
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button("Remove entry")) {
+                                    if (!open_tabs[i].translation->keys.empty())
+                                        open_tabs[i].translation->keys.pop_back();
+                                }
+                                for (int l = 0; l < open_tabs[i].translation->keys.size(); l++) {
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Translation key: ");
+                                    ImGui::SameLine();
+                                    ImGui::PushID(10 + l);
+                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth() / 3);
+                                    ImGui::InputText(" ", &open_tabs[i].translation->keys[l].first, ImGuiInputTextFlags_CharsNoBlank);
+                                    ImGui::PopID();
+                                    ImGui::SameLine();
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Translation text: ");
+                                    ImGui::SameLine();
+                                    ImGui::PushID(-10 - l);
+                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth() / 1.5);
+                                    ImGui::InputText(" ", &open_tabs[i].translation->keys[l].second);
+                                    ImGui::PopID();
+                                }
+                                if (ImGui::Button("Copy keys")) {
+                                    if (!translationkey_clipboard.empty() && ! open_tabs[i].translation->keys.empty())
+                                        translationkey_clipboard.clear();
+                                    for (int l = 0; l < open_tabs[i].translation->keys.size(); l++)
+                                        translationkey_clipboard.push_back(open_tabs[i].translation->keys[l].first);
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button("Paste keys")) {
+                                    if (!translationkey_clipboard.empty()) {
+                                        for (int l = 0; l < translationkey_clipboard.size(); l++) {
+                                            open_tabs[i].translation->keys.push_back({ translationkey_clipboard[l], "" });
+                                        }
+                                    }
+                                }
+                                break;
                             case DATALIST:
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
@@ -1919,7 +2288,7 @@ int main() {
                                             ImGui::Text("Component type: ");
                                             ImGui::SameLine();
                                             ImGui::PushID(56);
-                                            ImGui::Combo(" ", &open_tabs[i].procedure->components[j].type_int, "Input value\0Field input\0Field checkbox\0Field dropdown\0Datalist selector\0Input statement\0");
+                                            ImGui::Combo(" ", &open_tabs[i].procedure->components[j].type_int, "Input value\0Field input\0Field checkbox\0Field dropdown\0Datalist selector\0Input statement\0Dummy input\0Field image\0");
                                             ImGui::PopID();
                                             switch (open_tabs[i].procedure->components[j].type_int) {
                                             case 0:
@@ -1938,6 +2307,7 @@ int main() {
                                                 ImGui::PopID();
                                                 break;
                                             case 1:
+                                            case 6:
                                                 break;
                                             case 2:
                                                 ImGui::Checkbox("Is checked by default", &open_tabs[i].procedure->components[j].checkbox_checked);
@@ -1966,6 +2336,26 @@ int main() {
                                             case 5:
                                                 ImGui::Checkbox("Disable local variables in statement", &open_tabs[i].procedure->components[j].disable_localvars);
                                                 break;
+                                            case 7:
+                                                ImGui::AlignTextToFramePadding();
+                                                ImGui::Text("Image source: ");
+                                                ImGui::SameLine();
+                                                ImGui::PushID(3883);
+                                                ImGui::InputText(" ", &open_tabs[i].procedure->components[j].source);
+                                                ImGui::PopID();
+                                                ImGui::AlignTextToFramePadding();
+                                                ImGui::Text("Image width: ");
+                                                ImGui::SameLine();
+                                                ImGui::PushID(3881);
+                                                ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].width);
+                                                ImGui::PopID();
+                                                ImGui::AlignTextToFramePadding();
+                                                ImGui::Text("Image height: ");
+                                                ImGui::SameLine();
+                                                ImGui::PushID(3880);
+                                                ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].height);
+                                                ImGui::PopID();
+                                                break;
                                             }
                                             std::string index_str = "Translation key index: %%" + std::to_string(j + 1);
                                             ImGui::Text(index_str.c_str());
@@ -1982,8 +2372,12 @@ int main() {
                                                 case 4:
                                                     ccode = "${field$" + open_tabs[i].procedure->components[j].name + "}";
                                                     break;
+                                                case 6:
+                                                case 7:
+                                                    break;
                                                 }
-                                                SetClipboardText(ccode.c_str());
+                                                if (open_tabs[i].procedure->components[j].type_int != 6 && open_tabs[i].procedure->components[j].type_int != 7)
+                                                    SetClipboardText(ccode.c_str());
                                             }
                                             ImGui::EndTabItem();
                                         } // check if closed
@@ -2132,6 +2526,12 @@ int main() {
     }
 
     UnloadTexture(PluginIcon);
+    UnloadTexture(Sourceentity);
+    UnloadTexture(Immediatesourceentity);
+    UnloadTexture(Noentity);
+    UnloadTexture(Provideditemstack);
+    UnloadTexture(Providedblockstate);
+    UnloadTexture(Xyz);
 
     if (pluginmenu) {
         if (mcreator_path_set) {

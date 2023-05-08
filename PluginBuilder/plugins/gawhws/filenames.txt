@@ -30,3 +30,6 @@ immdt
 itemstack test
 blockstatetest
 eneitynone test
+Testt
+anothertest
+testblockcolor

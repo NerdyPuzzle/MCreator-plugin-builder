@@ -77,6 +77,24 @@
     <ClInclude Include="pluginimage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="sourceentity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="immediatesourceentity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="noentity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="provideditemstack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="providedblockstate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xyz.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="PluginBuilder.rc">
