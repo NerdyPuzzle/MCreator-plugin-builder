@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 #include <iostream>
 #include <raylib.h>
 #include <imgui.h>
@@ -21,6 +21,10 @@
 #include "provideditemstack.h"
 #include "providedblockstate.h"
 #include "xyz.h"
+#include <array>
+#include <memory>
+#include <stdexcept>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -38,12 +42,14 @@ int delete_globaltrigger = -1;
 int delete_category = -1;
 int delete_datalist = -1;
 int delete_translation = -1;
+int delete_api = -1;
 std::vector<const char*> tempchars_procedures;
 std::vector<const char*> tempchars_globaltriggers;
 std::vector<const char*> tempchars_categories;
 std::vector<const char*> tempchars_datalists;
 std::vector<const char*> tempchars_translations;
-bool active[5] = { false, false, false, false, false };
+std::vector<const char*> tempchars_apis;
+bool active[6] = { false, false, false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
 int combo_item = 0;
@@ -68,6 +74,18 @@ std::string pluginsdir = (std::string)getenv("USERPROFILE") + "\\.mcreator\\plug
 bool help_procedures = false;
 bool help_procedures_set_pos = true;
 std::vector<std::string> translationkey_clipboard;
+bool git_installed = false;
+bool git_workspace = false;
+bool git_setup = false;
+bool git_setup_set_pos = true;
+std::string repository_url;
+std::string dir;
+bool terminal = false;
+std::vector<std::string> terminal_lines;
+bool localcommit = false;
+bool localcommit_set_pos = true;
+std::string commit_msg;
+bool cloning = false;
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
@@ -79,6 +97,18 @@ std::string pluginversion;
 std::string pluginauthor;
 std::string plugindescription;
 
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(cmd, "r"), _pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
+}
 bool HasDependencies(const bool dependencies[12]) {
     for (int i = 0; i < 12; i++)
         if (dependencies[i])
@@ -190,6 +220,12 @@ void SavePlugin(const Plugin* plugin) {
                 case 0:
                     procedure << "\n" << comp.component_value;
                     procedure << "\n" << comp.value_int;
+                    if (comp.value_int == 4)
+                        procedure << "\n" << comp.boolean_checked;
+                    else if (comp.value_int == 5)
+                        procedure << "\n" << comp.number_default;
+                    else if (comp.value_int == 6)
+                        procedure << "\n" << comp.text_default;
                     break;
                 case 1:
                 case 6:
@@ -221,6 +257,9 @@ void SavePlugin(const Plugin* plugin) {
                 first = false;
             }
             procedure << "\n" << pc.world_dependency;
+            procedure << "\n" << pc.requires_api;
+            if (pc.requires_api)
+                procedure << "\n" << pc.api_name;
             if (!pc.code.empty()) {
                 if (!fs::exists(pluginpath + "procedures/code/"))
                     fs::create_directory(pluginpath + "procedures/code/");
@@ -282,6 +321,28 @@ void SavePlugin(const Plugin* plugin) {
     }
     else if (fs::exists(pluginpath + "translations/"))
         fs::remove_all(pluginpath + "translations/");
+
+    if (!plugin->data.apis.empty()) {
+        if (!fs::exists(pluginpath + "apis/"))
+            fs::create_directory(pluginpath + "apis/");
+        for (const Plugin::Api api : plugin->data.apis) {
+            std::ofstream api_(pluginpath + "apis/" + api.name + ".txt");
+            api_ << api.name << "\n";
+            api_ << api.versions.size();
+            for (int i = 0; i < api.versions.size(); i++) {
+                api_ << "\n" << api.versions[i].first;
+                api_ << "\n" << api.versions[i].second;
+                if (!fs::exists(pluginpath + "apis/code"))
+                    fs::create_directory(pluginpath + "apis/code");
+                std::ofstream templ_out(pluginpath + "apis/code/" + api.name + api.versions[i].first + api.versions[i].second + ".txt");
+                templ_out << api.code.at(api.versions[i]);
+                templ_out.close();
+            }
+            api_.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "apis/"))
+        fs::remove_all(pluginpath + "apis/");
 
 }
 Plugin LoadPlugin(std::string path) {
@@ -406,6 +467,17 @@ Plugin LoadPlugin(std::string path) {
                     case 0:
                         procedure >> comp.component_value;
                         procedure >> comp.value_int;
+                        if (comp.value_int == 4)
+                            procedure >> comp.boolean_checked;
+                        else if (comp.value_int == 5)
+                            procedure >> comp.number_default;
+                        else if (comp.value_int == 6) {
+                            comp.text_default.clear();
+                            procedure >> comp.text_default;
+                            std::getline(procedure, temp);
+                            comp.text_default.append(temp);
+                            temp.clear();
+                        }
                         break;
                     case 1:
                     case 6:
@@ -458,8 +530,17 @@ Plugin LoadPlugin(std::string path) {
                         line_.clear();
                         rtemp.clear();
                     }
-                    else if (line_.size() == 1)
+                    else if (line_.size() == 1) {
                         pc.world_dependency = (line_ == "1" ? true : false);
+                        break;
+                    }
+                }
+                procedure >> pc.requires_api;
+                if (pc.requires_api) {
+                    procedure >> pc.api_name;
+                    std::getline(procedure, temp);
+                    pc.api_name.append(temp);
+                    temp.clear();
                 }
                 if (fs::exists(path + "procedures/code/")) {
                     for (const std::pair<std::string, std::string> version : pc.versions) {
@@ -550,6 +631,35 @@ Plugin LoadPlugin(std::string path) {
         }
     }
 
+    if (fs::exists(path + "apis/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "apis/")) { // load external APIs
+            if (fs::is_regular_file(entry)) {
+                std::ifstream api_(entry.string());
+                Plugin::Api api;
+                std::getline(api_, api.name);
+                int version_count = 0;
+                api_ >> version_count;
+                for (int i = 0; i < version_count; i++) {
+                    std::pair<std::string, std::string> version_;
+                    api_ >> version_.first;
+                    api_ >> version_.second;
+                    api.versions.push_back(version_);
+                    api.version_names.push_back(version_.first + version_.second);
+                    std::ifstream templ(path + "apis/code/" + api.name + version_.first + version_.second + ".txt");
+                    std::string temp_s;
+                    bool firstl = true;
+                    while (std::getline(templ, temp_s)) {
+                        api.code[version_].append((std::string)(firstl ? "" : "\n") + temp_s);
+                        firstl = false;
+                    }
+                    templ.close();
+                }
+                api_.close();
+                plugin.data.apis.push_back(api);
+            }
+        }
+    }
+
     return plugin;
 }
 void LoadAllPlugins() {
@@ -567,6 +677,8 @@ void LoadAllPlugins() {
         std::getline(mc_path, mcreator_path);
     }
     mc_path.close();
+    if (std::system("git --version") == 0)
+        git_installed = true;
 }
 int IndexOf(const std::vector<std::string> data_, const std::string& element) {
     auto it = std::find(data_.begin(), data_.end(), element);
@@ -780,13 +892,13 @@ void ExportPlugin(const Plugin plugin) {
                         if (comp.component_value == "Number" && (comp.name == "X" || comp.name == "Y" || comp.name == "Z" || comp.name == "x" || comp.name == "y" || comp.name == "z"))
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "coord_" << LowerStr(comp.name) << "\\" << '"' << "></block></value>" << '"';
                         else if (comp.component_value == "Number")
-                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "math_number\\" << '"' << ">" << "<field name=" << "\\" << '"' << "NUM\\" << '"' << ">0</field>" << "</block></value>" << '"';
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "math_number\\" << '"' << ">" << "<field name=" << "\\" << '"' << "NUM\\" << '"' << ">" << comp.number_default << "</field>" << "</block></value>" << '"';
                         else if (comp.component_value == "Direction")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "direction_unspecified\\" << '"' << "></block></value>" << '"';
                         else if (comp.component_value == "Boolean")
-                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "logic_boolean\\" << '"' << ">" << "<field name=" << "\\" << '"' << "BOOL\\" << '"' << ">TRUE</field>" << "</block></value>" << '"';
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "logic_boolean\\" << '"' << ">" << "<field name=" << "\\" << '"' << "BOOL\\" << '"' << ">" << (comp.boolean_checked == 0 ? "TRUE" : "FALSE") << "</field>" << "</block></value>" << '"';
                         else if (comp.component_value == "Text")
-                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "text\\" << '"' << ">" << "<field name=" << "\\" << '"' << "TEXT\\" << '"' << ">text</field>" << "</block></value>" << '"';
+                            pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "text\\" << '"' << ">" << "<field name=" << "\\" << '"' << "TEXT\\" << '"' << ">" << comp.text_default << "</field>" << "</block></value>" << '"';
                         else if (comp.component_value == "Block" && comp.name != "providedblockstate")
                             pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_allblocks\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
                         else if (comp.component_value == "Block" && comp.name == "providedblockstate")
@@ -838,7 +950,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency || pc.requires_api ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!fields.empty()) {
@@ -847,7 +959,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == fields.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency || pc.requires_api ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!statements.empty()) {
@@ -859,7 +971,7 @@ void ExportPlugin(const Plugin plugin) {
                                 pc_ << "        \"disable_local_variables\": " + (std::string)(disable_locals[i - 1] ? "true\n" : "false\n");
                                 pc_ << "      }\n";
                             }
-                            pc_ << "    ]" + (std::string)(pc.world_dependency ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(pc.world_dependency || pc.requires_api ? ",\n" : "\n");
                             i = 0;
                         }
                     }
@@ -869,6 +981,11 @@ void ExportPlugin(const Plugin plugin) {
                         pc_ << "        \"name\": \"world\",\n";
                         pc_ << "        \"type\": \"world\"\n";
                         pc_ << "      }\n";
+                        pc_ << "    ]" + (std::string)(pc.requires_api ? ",\n" : "\n");
+                    }
+                    if (pc.requires_api) {
+                        pc_ << "    \"required_apis\": [\n";
+                        pc_ << "      \"" + RegistryName(pc.api_name) + "\"\n";
                         pc_ << "    ]\n";
                     }
                     pc_ << "  }\n";
@@ -1124,6 +1241,28 @@ void ExportPlugin(const Plugin plugin) {
                 }
             }
         }
+        if (!plugin.data.apis.empty()) {
+            zip.AddFolder("apis");
+            for (const Plugin::Api api : plugin.data.apis) {
+                std::ofstream api_("temp_data\\" + api.name + ".txt");
+                api_ << "---";
+                for (int i = 0; i < api.versions.size(); i++) {
+                    api_ << "\n" << LowerStr(api.versions[i].second) << "-" << api.versions[i].first << ":";
+                    api_ << "\n" << "  gradle: |";
+                    std::string templ;
+                    std::ifstream in_code("plugins\\" + plugin.data.name + "\\apis\\code\\" + api.name + api.versions[i].first + api.versions[i].second + ".txt");
+                    while (std::getline(in_code, templ))
+                        api_ << "\n" << "    " << templ;
+                    in_code.close();
+                    api_ << "\n" << "  update_files:";
+                    api_ << "\n" << "    - ~";
+                    api_ << "\n";
+                }
+                api_ << "name: \"" + api.name + "\"";
+                api_.close();
+                zip.AddFile("temp_data\\" + api.name + ".txt", "apis\\" + RegistryName(api.name) + ".yaml");
+            }
+        }
         zip.Close();
         fs::remove_all("temp_data\\");
     }
@@ -1134,7 +1273,7 @@ void ExportPlugin(const Plugin plugin) {
 
 // tab windows stuff
 enum WindowType {
-    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION
+    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION, API
 };
 struct TabWindow {
     WindowType type;
@@ -1144,6 +1283,7 @@ struct TabWindow {
     Plugin::Category* category;
     Plugin::Datalist* datalist;
     Plugin::Translation* translation;
+    Plugin::Api* api;
 };
 std::vector<TabWindow> open_tabs;
 std::vector<std::string> open_tab_names;
@@ -1284,14 +1424,21 @@ int main() {
                         MaximizeWindow();
                         std::string title = "Plugin Builder - [" + loaded_plugin.data.name + "]";
                         SetWindowTitle(title.c_str());
+                        if (fs::exists("plugins\\" + loaded_plugin.data.name + "\\.git"))
+                            git_workspace = true;
+                        dir = "cd " + (std::string)GetWorkingDirectory() + "\\plugins\\" + loaded_plugin.data.name + " && ";
                     }
                 if (ImGui::Button("Delete", { ImGui::GetColumnWidth(), 50 }))
                     if (selected_plugin != -1) {
                         delete_confirm = true;
                     }
-                ImGui::SetWindowFontScale(1);
                 ImGui::Spacing();
                 ImGui::Separator();
+                ImGui::Spacing();
+                if (ImGui::Button("Clone remote", { ImGui::GetColumnWidth(), 50 })) {
+                    cloning = true;
+                    git_setup = true;
+                }
                 ImGui::End();
             }
 
@@ -1418,6 +1565,85 @@ int main() {
                 ClearPluginVars();
         }
 
+        if (git_setup) {
+            if (git_setup_set_pos) {
+                if (!ImGui::IsPopupOpen("Setup remote project"))
+                    ImGui::OpenPopup("Setup remote project");
+                ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 97) / 2 });
+            }
+            git_setup_set_pos = false;
+            ImGui::SetNextWindowSize({ 300, 97 }, ImGuiCond_Once);
+            if (ImGui::BeginPopupModal("Setup remote project", &git_setup, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("Github repository HTTPS:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                ImGui::InputText(" ", &repository_url);
+                ImGui::Spacing();
+                ImGui::SetCursorPosX(100);
+                if (ImGui::Button("Create", { 100, 30 })) {
+                    if (git_installed) {
+                        if (!cloning) {
+                            if (!fs::exists("plugins\\" + loaded_plugin.data.name + "\\.git")) {
+                                std::string init = dir + "git init";
+                                terminal_lines.push_back(exec(init.c_str()));
+                                std::string add = dir + "git add .";
+                                terminal_lines.push_back(exec(add.c_str()));
+                                std::string commit = dir + "git commit -m \"Initial commit\"";
+                                terminal_lines.push_back(exec(commit.c_str()));
+                            }
+                            std::string repo_url = dir + "git remote add origin " + repository_url;
+                            if (std::system(repo_url.c_str()) == 0) {
+                                std::string push = dir + "git push --set-upstream origin master";
+                                terminal_lines.push_back(exec(push.c_str()));
+                                git_setup = false;
+                                git_workspace = true;
+                            }
+                        }
+                        else {
+                            fs::create_directory("temp_clone");
+                            std::string clone_temp = "cd " + (std::string)GetWorkingDirectory() + "\\temp_clone && git clone " + repository_url;
+                            if (std::system(clone_temp.c_str()) == 0) {
+                                std::string path;
+                                for (const fs::path entry : fs::directory_iterator("temp_clone\\")) {
+                                    if (fs::is_directory(entry.string()) && entry.filename() != ".git") {
+                                        path = entry.string();
+                                        break;
+                                    }
+                                }
+                                std::ifstream in_(path + "\\info.txt");
+                                std::string plgn_name;
+                                std::getline(in_, plgn_name);
+                                in_.close();
+                                if (!plgn_name.empty()) {
+                                    std::string remover = "attrib -r " + (std::string)GetWorkingDirectory() + "\\" + path + "\\*.* /s";
+                                    std::system(remover.c_str());
+                                    fs::remove_all("temp_clone\\");
+                                    if (fs::exists("plugins\\" + plgn_name))
+                                        fs::remove_all("plugins\\" + plgn_name + "\\");
+                                    fs::create_directory("plugins\\" + plgn_name);
+                                    std::string clone = "cd " + (std::string)GetWorkingDirectory() + "\\plugins\\" + plgn_name + " && git clone " + repository_url + " .";
+                                    std::system(clone.c_str());
+                                    plugins.clear();
+                                    LoadAllPlugins();
+                                    git_setup = false;
+                                }
+                            }
+                        }
+                    }
+                    else
+                        OpenURL("https://git-scm.com/downloads");
+                }
+                ImGui::End();
+            }
+        }
+        else {
+            git_setup_set_pos = true;
+            if (!repository_url.empty())
+                repository_url.clear();
+            cloning = false;
+        }
+
         if (pluginmenu) {
             if (ImGui::BeginMainMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
@@ -1445,6 +1671,8 @@ int main() {
                             if (fs::exists(mcreator_path + "\\plugins\\" + loaded_plugin.data.id + ".zip"))
                                 fs::remove(mcreator_path + "\\plugins\\" + loaded_plugin.data.id + ".zip");
                         }
+                        terminal = false;
+                        terminal_lines.clear();
                         SetWindowTitle("Plugin Builder");
                     }
                     ImGui::EndMenu();
@@ -1466,11 +1694,55 @@ int main() {
                         ExportPlugin(loaded_plugin);
                     }
                     if (ImGui::MenuItem("Run with MCreator", NULL, nullptr, mcreator_path_set)) {
-                        running_with_mcreator = true;
-                        if (fs::exists(pluginsdir + loaded_plugin.data.id + ".zip"))
-                            fs::remove(pluginsdir + loaded_plugin.data.id + ".zip");
-                        ExportPlugin(loaded_plugin);
-                        RunExe(mcreator_path + "\\mcreator.exe");
+                        if (!IsProcessRunning(L"mcreator.exe")) {
+                            running_with_mcreator = true;
+                            if (fs::exists(pluginsdir + loaded_plugin.data.id + ".zip"))
+                                fs::remove(pluginsdir + loaded_plugin.data.id + ".zip");
+                            ExportPlugin(loaded_plugin);
+                            RunExe(mcreator_path + "\\mcreator.exe");
+                        }
+                    }
+                    if (IsProcessRunning(L"mcreator.exe") && ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("MCreator is already running!");
+                        ImGui::EndTooltip();
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Git")) {
+                    if (ImGui::MenuItem("Install git", nullptr, nullptr, !git_installed)) {
+                        OpenURL("https://git-scm.com/downloads");
+                    }
+                    if (ImGui::MenuItem("Setup remote project", nullptr, nullptr, git_installed)) {
+                        git_setup = true;
+                    }
+                    if (ImGui::MenuItem("Open git terminal", nullptr, nullptr, !terminal)) {
+                        terminal = true;
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Commit changes", nullptr, nullptr, git_installed && git_workspace)) {
+                        localcommit = true;
+                    }
+                    if (ImGui::MenuItem("Discard local commits", nullptr, nullptr, git_installed && git_workspace && false)) {
+                        std::string reset = dir + "git reset --hard";
+                        terminal_lines.push_back(exec(reset.c_str()));
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Fetch origin", nullptr, nullptr, git_installed && git_workspace)) {
+                        std::string fetch = dir + "git fetch --set-upstream origin master";
+                        terminal_lines.push_back(exec(fetch.c_str()));
+                    }
+                    if (ImGui::MenuItem("Pull origin", nullptr, nullptr, git_installed && git_workspace)) {
+                        std::string pull = dir + "git pull --set-upstream origin master";
+                        terminal_lines.push_back(exec(pull.c_str()));
+                        std::string pluginname = loaded_plugin.data.name;
+                        open_tabs.clear();
+                        open_tab_names.clear();
+                        loaded_plugin = LoadPlugin("plugins\\" + pluginname + "\\");
+                    }
+                    if (ImGui::MenuItem("Push origin", nullptr, nullptr, git_installed && git_workspace)) {
+                        std::string push = dir + "git push --set-upstream origin master";
+                        terminal_lines.push_back(exec(push.c_str()));
                     }
                     ImGui::EndMenu();
                 }
@@ -1481,12 +1753,63 @@ int main() {
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
-            } // implement menu bar later
+            }
+
+            if (terminal) {
+                ImGui::SetNextWindowSize({ 300, 100 }, ImGuiCond_Once);
+                ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 100) / 2 }, ImGuiCond_Once);
+                if (ImGui::Begin("Git terminal", &terminal)) {
+                    ImGui::BeginChild(248);
+                    for (int i = 0; i < terminal_lines.size(); i++)
+                        ImGui::Text(terminal_lines[i].c_str());
+                    ImGui::EndChild();
+                }
+                ImGui::End();
+            }
+
+            if (localcommit) {
+                if (localcommit_set_pos) {
+                    if (!ImGui::IsPopupOpen("Commit changes")) {
+                        ImGui::OpenPopup("Commit changes");
+                        std::string getchanges = dir + "git diff --stat";
+                        terminal_lines.push_back(exec(getchanges.c_str()));
+                    }
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 400) / 2, (float)(GetScreenHeight() - 230) / 2 });
+                }
+                localcommit_set_pos = false;
+                ImGui::SetNextWindowSize({ 400, 230 }, ImGuiCond_Once);
+                if (ImGui::BeginPopupModal("Commit changes", &localcommit, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("Commit message:");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::InputText(" ", &commit_msg);
+                    ImGui::NewLine();
+                    ImGui::Text("Changes");
+                    ImGui::BeginChild(283, { ImGui::GetColumnWidth(), 100 });
+                    ImGui::TextColored(rlImGuiColors::Convert(YELLOW), terminal_lines[terminal_lines.size() - 1].c_str());
+                    ImGui::EndChild();
+                    ImGui::SetCursorPosX(150);
+                    if (ImGui::Button("Commit", { 100, 30 }) && !commit_msg.empty()) {
+                        std::string addall = dir + "git add .";
+                        terminal_lines.push_back(exec(addall.c_str()));
+                        std::string commit = dir + "git commit -m \"" + commit_msg + "\"";
+                        terminal_lines.push_back(exec(commit.c_str()));
+                        localcommit = false;
+                    }
+                    ImGui::End();
+                }
+            }
+            else {
+                localcommit_set_pos = true;
+                if (!commit_msg.empty())
+                    commit_msg.clear();
+            }
 
             if (deletefile) {
                 ImGui::OpenPopup("Delete file");
                 if (deletefile_set_pos) {
-                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 215) / 2 });
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 270) / 2 });
                     for (int j = 0; j < loaded_plugin.data.procedures.size(); j++) {
                         tempchars_procedures.push_back(loaded_plugin.data.procedures[j].name.c_str());
                     }
@@ -1502,53 +1825,77 @@ int main() {
                     for (int j = 0; j < loaded_plugin.data.translations.size(); j++) {
                         tempchars_translations.push_back(loaded_plugin.data.translations[j].name.c_str());
                     }
+                    for (int j = 0; j < loaded_plugin.data.apis.size(); j++) {
+                        tempchars_apis.push_back(loaded_plugin.data.apis[j].name.c_str());
+                    }
                 }
                 deletefile_set_pos = false;
-                ImGui::SetNextWindowSize({ 300, 215 });
+                ImGui::SetNextWindowSize({ 300, 270 });
                 if (ImGui::BeginPopupModal("Delete file", &deletefile, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                     if (delete_procedure != -1 && !active[0]) {
                         delete_globaltrigger = -1;
                         delete_category = -1;
                         delete_datalist = -1;
                         delete_translation = -1;
+                        delete_api = -1;
                         active[0] = true;
                         active[1] = false;
                         active[2] = false;
                         active[3] = false;
                         active[4] = false;
+                        active[5] = false;
                     }
                     else if (delete_globaltrigger != -1 && !active[1]) {
                         delete_procedure = -1;
                         delete_category = -1;
                         delete_datalist = -1;
                         delete_translation = -1;
+                        delete_api = -1;
                         active[1] = true;
                         active[0] = false;
                         active[2] = false;
                         active[3] = false;
                         active[4] = false;
+                        active[5] = false;
                     }
                     else if (delete_category != -1 && !active[2]) {
                         delete_procedure = -1;
                         delete_globaltrigger = -1;
                         delete_datalist = -1;
                         delete_translation = -1;
+                        delete_api = -1;
                         active[2] = true;
                         active[1] = false;
                         active[0] = false;
                         active[3] = false;
                         active[4] = false;
+                        active[5] = false;
                     }
                     else if (delete_datalist != -1 && !active[3]) {
                         delete_procedure = -1;
                         delete_globaltrigger = -1;
                         delete_category = -1;
                         delete_translation = -1;
+                        delete_api = -1;
                         active[3] = true;
                         active[2] = false;
                         active[1] = false;
                         active[0] = false;
                         active[4] = false;
+                        active[5] = false;
+                    }
+                    else if (delete_api != -1 && !active[4]) {
+                        delete_procedure = -1;
+                        delete_globaltrigger = -1;
+                        delete_category = -1;
+                        delete_translation = -1;
+                        delete_datalist = -1;
+                        active[5] = true;
+                        active[2] = false;
+                        active[1] = false;
+                        active[0] = false;
+                        active[4] = false;
+                        active[3] = false;
                     }
 
                     ImGui::Text("Procedures");
@@ -1566,6 +1913,9 @@ int main() {
                     ImGui::Text("Translations");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::ListBox("translations", &delete_translation, tempchars_translations.data(), loaded_plugin.data.translations.size());
+                    ImGui::Text("APIs");
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::ListBox("apis", &delete_api, tempchars_apis.data(), loaded_plugin.data.apis.size());
 
                     if (delete_procedure != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name)]) != open_tab_names.end())
@@ -1593,6 +1943,12 @@ int main() {
                     }
                     else if (delete_translation != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.translations[delete_translation].name)]) != open_tab_names.end())
+                            file_open = true;
+                        else
+                            file_open = false;
+                    }
+                    else if (delete_api != -1) {
+                        if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.apis[delete_api].name)]) != open_tab_names.end())
                             file_open = true;
                         else
                             file_open = false;
@@ -1630,7 +1986,13 @@ int main() {
                             loaded_plugin.data.translations.erase(loaded_plugin.data.translations.begin() + delete_translation);
                             tempchars_translations.erase(tempchars_translations.begin() + delete_translation);
                         }
-                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1) && !file_open) {
+                        else if (delete_api != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/apis/" + loaded_plugin.data.apis[delete_api].name + ".txt");
+                            loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.apis[delete_api].name));
+                            loaded_plugin.data.apis.erase(loaded_plugin.data.apis.begin() + delete_api);
+                            tempchars_apis.erase(tempchars_apis.begin() + delete_api);
+                        }
+                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1 || delete_api != -1) && !file_open) {
                             SavePlugin(&loaded_plugin);
                             deletefile = false;
                         }
@@ -1651,7 +2013,8 @@ int main() {
                 delete_globaltrigger = -1;
                 delete_category = -1;
                 delete_translation = -1;
-                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false;
+                delete_api = -1;
+                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false; active[5] = false;
                 if (!tempchars_procedures.empty())
                     tempchars_procedures.clear();
                 if (!tempchars_globaltriggers.empty())
@@ -1662,6 +2025,8 @@ int main() {
                     tempchars_datalists.clear();
                 if (!tempchars_translations.empty())
                     tempchars_translations.clear();
+                if (!tempchars_apis.empty())
+                    tempchars_apis.clear();
                 if (file_open)
                     file_open = false;
             }
@@ -1676,7 +2041,7 @@ int main() {
                 ImGui::SetNextWindowSize({ 300, 120 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("New file", &addfile, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation");
+                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation\0API");
                     ImGui::Spacing();
                     ImGui::AlignTextToFramePadding();
                     ImGui::Text("Name: "); ImGui::SameLine();
@@ -1729,6 +2094,13 @@ int main() {
                                 translation.name = file_name;
                                 loaded_plugin.data.translations.push_back(translation);
                                 window.translation = &loaded_plugin.data.translations[loaded_plugin.data.translations.size() - 1];
+                            }
+                            else if (combo_item == 5) {
+                                window.type = API;
+                                Plugin::Api api;
+                                api.name = file_name;
+                                loaded_plugin.data.apis.push_back(api);
+                                window.api = &loaded_plugin.data.apis[loaded_plugin.data.apis.size() - 1];
                             }
                             loaded_plugin.data.filenames.push_back(file_name);
                             open_tabs.push_back(window);
@@ -1806,6 +2178,11 @@ int main() {
                             open_tabs[current_tab].datalist->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
                             addversion = false;
                         }
+                        else if (versiontype == API) {
+                            open_tabs[current_tab].api->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
+                            open_tabs[current_tab].api->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            addversion = false;
+                        }
                     }
                     if (tooltip && ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
@@ -1880,48 +2257,70 @@ int main() {
                             ImGui::Spacing();
                             ImGui::Text("Block procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(2);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 153, 96, 255 })))
                                 ImGui::SetClipboardText("#999960");
+                            ImGui::PopID();
                             ImGui::Text("Item procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(3);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 96, 105, 255 })))
                                 ImGui::SetClipboardText("#996069");
+                            ImGui::PopID();
                             ImGui::Text("Math procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(4);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 105, 153, 255 })))
                                 ImGui::SetClipboardText("#606999");
+                            ImGui::PopID();
                             ImGui::Text("Logic procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(5);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 124, 153, 255 })))
                                 ImGui::SetClipboardText("#607c99");
+                            ImGui::PopID();
                             ImGui::Text("Entity procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(6);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 138, 153, 255 })))
                                 ImGui::SetClipboardText("#608a99");
+                            ImGui::PopID();
                             ImGui::Text("Player procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(7);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 153, 148, 255 })))
                                 ImGui::SetClipboardText("#609994");
+                            ImGui::PopID();
                             ImGui::Text("Direction procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(8);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 115, 96, 255 })))
                                 ImGui::SetClipboardText("#997360");
+                            ImGui::PopID();
                             ImGui::Text("World procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(9);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 129, 96, 255 })))
                                 ImGui::SetClipboardText("#998160");
+                            ImGui::PopID();
                             ImGui::Text("Text procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(10);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 96, 153, 134, 255 })))
                                 ImGui::SetClipboardText("#609986");
+                            ImGui::PopID();
                             ImGui::Text("Projectile procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(11);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 153, 96, 153, 255 })))
                                 ImGui::SetClipboardText("#996099");
+                            ImGui::PopID();
                             ImGui::Text("GUI procedures color: ");
                             ImGui::SameLine();
+                            ImGui::PushID(12);
                             if (ImGui::ColorButton(" ", rlImGuiColors::Convert({ 105, 153, 96, 255 })))
                                 ImGui::SetClipboardText("#699960");
+                            ImGui::PopID();
                             ImGui::EndTabItem();
                         }
                         if (ImGui::BeginTabItem("Component names")) {
@@ -1952,6 +2351,37 @@ int main() {
                             ImGui::SameLine();
                             ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 17);
                             rlImGuiImage(&Xyz);
+                            ImGui::EndTabItem();
+                        }
+                        if (ImGui::BeginTabItem("MCreator images")) {
+                            ImGui::Spacing();
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::Text("Server-side indicator: ");
+                            ImGui::SameLine();
+                            if (ImGui::Button("Copy source"))
+                                SetClipboardText("./res/server.png");
+                            ImGui::Text("Width: 8");
+                            ImGui::Text("Height: 24");
+                            ImGui::NewLine();
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::Text("Client-side indicator: ");
+                            ImGui::SameLine();
+                            ImGui::PushID(2);
+                            if (ImGui::Button("Copy source"))
+                                SetClipboardText("./res/client.png");
+                            ImGui::PopID();
+                            ImGui::Text("Width: 8");
+                            ImGui::Text("Height: 24");
+                            ImGui::NewLine();
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::Text("Null value indicator: ");
+                            ImGui::SameLine();
+                            ImGui::PushID(3);
+                            if (ImGui::Button("Copy source"))
+                                SetClipboardText("./res/null.png");
+                            ImGui::PopID();
+                            ImGui::Text("Width: 8");
+                            ImGui::Text("Height: 24");
                             ImGui::EndTabItem();
                         }
                         ImGui::EndTabBar();
@@ -2054,6 +2484,23 @@ int main() {
                         }
                     }
                 }
+                if (ImGui::CollapsingHeader("APIs")) {
+                    if (!loaded_plugin.data.apis.empty()) {
+                        for (Plugin::Api& api : loaded_plugin.data.apis) {
+                            ImGui::Bullet();
+                            ImGui::SameLine();
+                            if (ImGui::MenuItem(api.name.c_str())) {
+                                if (std::find(open_tab_names.begin(), open_tab_names.end(), api.name) == open_tab_names.end()) {
+                                    TabWindow window;
+                                    window.type = API;
+                                    window.api = &api;
+                                    open_tabs.push_back(window);
+                                    open_tab_names.push_back(api.name);
+                                }
+                            }
+                        }
+                    }
+                }
                 ImGui::End();
             }
 
@@ -2083,6 +2530,29 @@ int main() {
                             }
 
                             switch (open_tabs[i].type) {
+                            case API:
+                                ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("API name: ");
+                                ImGui::SameLine();
+                                ImGui::InputText(" ", &open_tabs[i].api->name, ImGuiInputTextFlags_ReadOnly);
+                                ImGui::Spacing();
+                                ImGui::Text("Gradle templates");
+                                if (ImGui::BeginTabBar("gradle", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
+                                    if (ImGui::TabItemButton("+")) {
+                                        addversion = true;
+                                        versiontype = API;
+                                    }
+                                    for (int j = 0; j < open_tabs[i].api->versions.size(); j++) {
+                                        std::string version__ = open_tabs[i].api->versions[j].first + " " + open_tabs[i].api->versions[j].second;
+                                        if (ImGui::BeginTabItem(version__.c_str())) {
+                                            ImGui::InputTextMultiline(" ", &open_tabs[i].api->code[open_tabs[i].api->versions[j]], { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
+                                            ImGui::EndTabItem();
+                                        }
+                                    }
+                                    ImGui::EndTabBar();
+                                }
+                                break;
                             case TRANSLATION:
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
@@ -2221,14 +2691,17 @@ int main() {
                                 break;
                             case PROCEDURE:
                                 ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure name: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure type: ");
                                 ImGui::SameLine();
                                 ImGui::PushID(1);
                                 ImGui::Combo(" ", &open_tabs[i].procedure->type, "Input\0Output");
                                 if (open_tabs[i].procedure->type == 1) {
+                                    ImGui::AlignTextToFramePadding();
                                     ImGui::Text("Procedure output type: ");
                                     ImGui::SameLine();
                                     ImGui::PushID(225);
@@ -2243,10 +2716,12 @@ int main() {
                                     ImGui::PopID();
                                 }
                                 ImGui::PopID();
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure color: ");
                                 ImGui::SameLine();
                                 ImGui::ColorEdit4(" ", cols);
                                 open_tabs[i].procedure->color = { cols[0], cols[1], cols[2], cols[3] };
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure category: ");
                                 ImGui::SameLine();
                                 ImGui::PushID(2);
@@ -2267,11 +2742,23 @@ int main() {
                                 }
                                 ImGui::PopID();
                                 ImGui::PushID(772);
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure translation key: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
                                 ImGui::PopID();
-                                ImGui::Checkbox("Require world dependency", &open_tabs[i].procedure->world_dependency);
+                                ImGui::Checkbox("Requires world dependency", &open_tabs[i].procedure->world_dependency);
+                                ImGui::PushID(2394);
+                                ImGui::Checkbox("Requires an external API", &open_tabs[i].procedure->requires_api);
+                                ImGui::PopID();
+                                if (open_tabs[i].procedure->requires_api) {
+                                    ImGui::PushID(2838);
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("API name: ");
+                                    ImGui::SameLine();
+                                    ImGui::InputText(" ", &open_tabs[i].procedure->api_name);
+                                    ImGui::PopID();
+                                }
                                 ImGui::Spacing();
                                 ImGui::Spacing();
                                 ImGui::Text("Procedure block components");
@@ -2282,9 +2769,11 @@ int main() {
                                     for (int j = 0; j < open_tabs[i].procedure->components.size() && !open_tabs[i].procedure->components.empty(); j++) {
                                         if (ImGui::BeginTabItem(open_tabs[i].procedure->components[j].name.c_str(), &open_tabs[i].procedure->components[j].open)) {
                                             ImGui::Spacing();
+                                            ImGui::AlignTextToFramePadding();
                                             ImGui::Text("Component name: ");
                                             ImGui::SameLine();
                                             ImGui::InputText(" ", &open_tabs[i].procedure->components[j].name, ImGuiInputTextFlags_CharsNoBlank);
+                                            ImGui::AlignTextToFramePadding();
                                             ImGui::Text("Component type: ");
                                             ImGui::SameLine();
                                             ImGui::PushID(56);
@@ -2292,6 +2781,7 @@ int main() {
                                             ImGui::PopID();
                                             switch (open_tabs[i].procedure->components[j].type_int) {
                                             case 0:
+                                                ImGui::AlignTextToFramePadding();
                                                 ImGui::Text("Value type: ");
                                                 ImGui::SameLine();
                                                 ImGui::PushID(2);
@@ -2305,6 +2795,30 @@ int main() {
                                                     ImGui::EndCombo();
                                                 }
                                                 ImGui::PopID();
+                                                if (open_tabs[i].procedure->components[j].value_int == 4) {
+                                                    ImGui::PushID(88);
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Boolean default value: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::Combo(" ", &open_tabs[i].procedure->components[j].boolean_checked, "True\0False");
+                                                    ImGui::PopID();
+                                                }
+                                                else if (open_tabs[i].procedure->components[j].value_int == 5) {
+                                                    ImGui::PushID(88);
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Number default value: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].number_default);
+                                                    ImGui::PopID();
+                                                }
+                                                else if (open_tabs[i].procedure->components[j].value_int == 6) {
+                                                    ImGui::PushID(88);
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Text default value: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].text_default);
+                                                    ImGui::PopID();
+                                                }
                                                 break;
                                             case 1:
                                             case 6:
@@ -2327,6 +2841,7 @@ int main() {
                                                 }
                                                 break;
                                             case 4:
+                                                ImGui::AlignTextToFramePadding();
                                                 ImGui::Text("Datalist name: ");
                                                 ImGui::SameLine();
                                                 ImGui::PushID(3);
@@ -2409,9 +2924,11 @@ int main() {
                                 break;
                             case GLOBALTRIGGER:
                                 ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Trigger name: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Trigger type: ");
                                 ImGui::SameLine();
                                 ImGui::PushID(1);

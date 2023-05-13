@@ -46,6 +46,9 @@ public:
 		int width = 0;
 		int height = 0;
 		std::string source;
+		int boolean_checked = 0;
+		int number_default = 0;
+		std::string text_default = "text";
 	};
 
 	struct Category {
@@ -68,6 +71,8 @@ public:
 		std::string translationkey;
 		std::string name;
 		bool world_dependency = false;
+		bool requires_api = false;
+		std::string api_name;
 	};
 
 	struct GlobalTrigger {
@@ -98,6 +103,13 @@ public:
 		std::string name;
 	};
 
+	struct Api {
+		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
+		std::map<std::pair<std::string, std::string>, std::string> code;
+		std::string name;
+	};
+
 private:
 	struct Data {
 		std::string name;
@@ -113,6 +125,7 @@ private:
 		std::vector<GlobalTrigger> globaltriggers;
 		std::vector<Datalist> datalists;
 		std::vector<Translation> translations;
+		std::vector<Api> apis;
 		std::vector<std::string> filenames;
 	};
 

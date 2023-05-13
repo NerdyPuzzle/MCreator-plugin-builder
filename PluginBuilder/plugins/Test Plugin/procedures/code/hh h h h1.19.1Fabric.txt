@@ -1,5 +1,0 @@
-                                            if (change) {
-                                                code_editor.SetText("");
-                                                code_editor.SetText(open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]]);
-                                                change = false;
-                                            }

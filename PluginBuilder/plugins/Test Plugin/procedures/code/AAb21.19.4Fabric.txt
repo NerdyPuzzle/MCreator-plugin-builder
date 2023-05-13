@@ -1,7 +1,0 @@
-testtestt
-twasg
-hws
-hwsahahsw
-awshahwsa
-aaaaaaaaaaaaaaaaaa
-${input$x}

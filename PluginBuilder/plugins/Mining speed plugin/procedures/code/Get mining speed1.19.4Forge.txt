@@ -1,1 +1,0 @@
-((PlayerEvent.BreakSpeed)event).getOriginalSpeed()
