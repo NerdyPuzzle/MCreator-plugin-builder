@@ -1,2 +1,0 @@
-wtffff f f
-${data.coo_checkbox}

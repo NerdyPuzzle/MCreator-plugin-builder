@@ -549,8 +549,6 @@ void SavePlugin(const Plugin* plugin) {
             modelement.close();
         }
     }
-    else if (fs::exists(pluginpath + "modelements/"))
-        fs::remove_all(pluginpath + "modelements/");
 
 }
 Plugin LoadPlugin(std::string path) {
@@ -970,6 +968,7 @@ Plugin LoadPlugin(std::string path) {
                             modelement >> type;
                             switch (type) {
                             case 0:
+                                me.widgets[me.page_names[i]][{ j, l }].type = Plugin::EMPTY_BOX;
                                 break;
                             case 1:
                                 me.widgets[me.page_names[i]][{ j, l }].type = Plugin::LABEL;
@@ -3042,9 +3041,9 @@ int main() {
                             tempchars_apis.erase(tempchars_apis.begin() + delete_api);
                         }
                         else if (delete_modelement != -1 && !file_open) {
-                            fs::remove("plugins/" + loaded_plugin.data.name + "/modelements/" + loaded_plugin.data.modelements[delete_modelement].name + ".txt");
                             UnloadTexture(loaded_plugin.data.modelements[delete_modelement].dark_icon);
                             UnloadTexture(loaded_plugin.data.modelements[delete_modelement].light_icon);
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/modelements/" + loaded_plugin.data.modelements[delete_modelement].name + ".txt");
                             loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.modelements[delete_modelement].name));
                             loaded_plugin.data.modelements.erase(loaded_plugin.data.modelements.begin() + delete_modelement);
                             tempchars_modelements.erase(tempchars_modelements.begin() + delete_modelement);

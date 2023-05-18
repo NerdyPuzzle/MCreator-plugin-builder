@@ -1,5 +1,0 @@
-package ${package}.local_templates;
-
-public class ${name}shjdeshj {
-
-}
