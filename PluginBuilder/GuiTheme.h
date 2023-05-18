@@ -1,10 +1,12 @@
 #pragma once
 #include <imgui.h>
 
-void SetGuiTheme() {
-	ImGuiStyle* style = &ImGui::GetStyle();
-	ImVec4* colors = style->Colors;
+ImGuiStyle* style = { 0 };
+ImVec4* colors = { 0 };
 
+void SetGuiTheme() {
+	style = &ImGui::GetStyle();
+	colors = style->Colors;
 	colors[ImGuiCol_Text] = ImVec4(1.000f, 1.000f, 1.000f, 1.000f);
 	colors[ImGuiCol_TextDisabled] = ImVec4(0.500f, 0.500f, 0.500f, 1.000f);
 	//colors[ImGuiCol_WindowBg] = ImVec4(0.180f, 0.180f, 0.180f, 1.000f);

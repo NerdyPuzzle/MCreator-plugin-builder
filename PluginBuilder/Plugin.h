@@ -4,6 +4,7 @@
 #include <map>
 #include <imgui.h>
 #include <deque>
+#include <raylib.h>
 
 class Plugin {
 
@@ -47,8 +48,12 @@ public:
 		int height = 0;
 		std::string source;
 		int boolean_checked = 0;
-		int number_default = 0;
+		float number_default = 0;
 		std::string text_default = "text";
+		bool entry_provider = false;
+		std::string provider_name;
+		bool input_hastext = false;
+		std::string input_text;
 	};
 
 	struct Category {
@@ -83,6 +88,8 @@ public:
 		bool dependencies[12] = {false, false, false, false, false, false, false, false, false, false, false, false};
 		bool cancelable = false;
 		int side = 0;
+		bool manual_code = false;
+		std::string json_code;
 		std::string name;
 	};
 
@@ -110,6 +117,57 @@ public:
 		std::string name;
 	};
 
+	struct Animation {
+		std::vector<std::pair<int, std::string>> lines; // rotation, code
+		std::string name;
+	};
+
+	static enum WidgetType {
+		EMPTY_BOX, LABEL, CHECKBOX, NUMBER_FIELD, TEXT_FIELD, DROPDOWN, ITEM_SELECTOR, TEXTURE_SELECTOR, MODEL_SELECTOR
+	};
+
+	struct Widget {
+		WidgetType type = EMPTY_BOX;
+		int type_int = 0;
+		std::string labeltext;
+		std::string varname;
+		bool has_tooltip = false;
+		std::string tooltip;
+		std::string displayname = "[EMPTY BOX]";
+		bool append_label = false;
+		float step_amount = 0.1;
+		float max_value = 10;
+		float min_value = 0;
+		int textfield_length = 0;
+		bool textfield_validated = false;
+		bool textfield_elementname = false;
+		std::vector<std::string> dropdown_options;
+		bool blocks_only = false;
+		int texture_type = 0;
+		int model_type = 0;
+	};
+
+	struct ModElement {
+		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
+		std::string description;
+		Texture light_icon = { 0 };
+		Texture dark_icon = { 0 };
+		std::string light_icon_path;
+		std::string dark_icon_path;
+		std::deque<std::pair<std::pair<int, bool>, std::string>> pages; // rows, name
+		std::vector<std::string> page_names;
+		std::map<std::string, std::map<std::pair<int, int>, Widget>> widgets;
+		std::vector<std::string> local_templates;
+		std::vector<std::string> global_templates;
+		std::vector<std::string> template_names;
+		std::map<std::pair<std::string, std::pair<std::string, std::string>>, std::string> code;
+		int selected_global = -1;
+		int selected_local = -1;
+		std::deque<bool> needs_validator;
+		std::string name;
+	};
+
 private:
 	struct Data {
 		std::string name;
@@ -126,6 +184,8 @@ private:
 		std::vector<Datalist> datalists;
 		std::vector<Translation> translations;
 		std::vector<Api> apis;
+		std::vector<Animation> animations;
+		std::vector<ModElement> modelements;
 		std::vector<std::string> filenames;
 	};
 
