@@ -18,9 +18,9 @@ public:
 	void AddFile(std::string path_from, std::string path_to);
 	void AddFolder(std::string path);
 	void UnzipFile(std::string path);
+	void SetUnzipDir(std::string path);
+	void UnzipEverything();
 	void Close();
-	std::vector<fs::path> ZipIterator(std::string path);
-	std::vector<fs::path> ZipIterator();
 private:
 	void* value;
 };

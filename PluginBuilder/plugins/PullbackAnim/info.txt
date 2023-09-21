@@ -1,0 +1,6 @@
+PullbackAnim
+pullbackanim
+1.0.0
+Nayza
+New elements to make a bow item with arrow pullback animation
+Made with MCreator plugin builder by NerdyPuzzle

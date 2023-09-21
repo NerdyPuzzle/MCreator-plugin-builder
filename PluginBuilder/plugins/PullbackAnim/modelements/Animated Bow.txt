@@ -1,0 +1,81 @@
+Animated Bow
+Add the custom bow with arrow pullback animation
+D:\Mod texture\animatedbowpluginicon.png
+D:\Mod texture\animatedbowpluginicon.png
+1
+10
+Ranged item
+1
+In-game Name
+0
+4
+ingamename
+30
+1
+1
+1
+Special information about the ranged item
+0
+4
+specialInfo
+70
+1
+0
+1
+Bow texture
+0
+7
+bowtexture
+1
+1
+1st State pulling back texture
+0
+7
+1stState
+1
+1
+2nd State pulling back texture
+0
+7
+2ndState
+1
+1
+3rd State pulling back texture
+0
+7
+3rdState
+1
+1
+Durability
+0
+3
+Durability
+1
+10000
+1
+1
+Damage against Mob/Animals
+1
+Enable melee damage for it to work
+3
+dmgMobs
+1
+10000
+0
+1
+Item for ammo
+0
+6
+ammoItems
+0
+1
+Shoot constantly when active
+0
+2
+constantShooting?
+0
+1
+0 0
+0
+0
+0

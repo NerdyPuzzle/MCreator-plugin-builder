@@ -89,32 +89,14 @@ void Zip::AddFolder(std::string path) {
 	ZipAddFolder((HZIP)value, t);
 }
 
-std::vector<fs::path> Zip::ZipIterator() {
-	std::vector<fs::path> paths;
+void Zip::UnzipEverything() {
 	ZIPENTRY ze; 
 	GetZipItem((HZIP)value, -1, &ze);
 	int numitems = ze.index;
 	for (int i = 0; i < numitems; i++) {
 		GetZipItem((HZIP)value, i, &ze);
-		paths.push_back(ze.name);
+		UnzipItem((HZIP)value, i, ze.name);
 	}
-	return paths;
-}
-
-std::vector<fs::path> Zip::ZipIterator(std::string path) {
-	std::vector<fs::path> paths;
-	TCHAR t[MAX_TCHAR_BUFFER_SIZE];
-	std::wstring s = s2ws2(path);
-	_tcscpy_s(t, s.c_str());
-	ZIPENTRY ze;
-	SetUnzipBaseDir((HZIP)value, t);
-	GetZipItem((HZIP)value, -1, &ze);
-	int numitems = ze.index;
-	for (int i = 0; i < numitems; i++) {
-		GetZipItem((HZIP)value, i, &ze);
-		paths.push_back(ze.name);
-	}
-	return paths;
 }
 
 void Zip::UnzipFile(std::string path) {
@@ -125,6 +107,13 @@ void Zip::UnzipFile(std::string path) {
 	int index = -1;
 	FindZipItem((HZIP)value, t, false, &index, &ze);
 	UnzipItem((HZIP)value, index, ze.name);
+}
+
+void Zip::SetUnzipDir(std::string path) {
+	TCHAR t[MAX_TCHAR_BUFFER_SIZE];
+	std::wstring s = s2ws2(path);
+	_tcscpy_s(t, s.c_str());
+	SetUnzipBaseDir((HZIP)value, t);
 }
 
 void Zip::Close() {

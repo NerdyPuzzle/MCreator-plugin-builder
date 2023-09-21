@@ -105,6 +105,23 @@ bool addtemplate = false;
 bool addtemplate_set_pos = true;
 bool local = false;
 std::string templ_name;
+bool template_viewer = false;
+bool template_viewer_set_pos = true;
+std::string template_filter = "";
+std::string template_viewer_filter = "";
+int template_index = -1;
+std::pair<std::string, std::string> vers__;
+std::string nameof__;
+std::string code__;
+std::string dirpath__;
+bool template_editor = false;
+bool template_editor_set_pos = true;
+
+Plugin::TemplateLists template_lists;
+std::vector<std::string> dirpaths;
+int selected_list = -1;
+std::vector<std::pair<std::string, std::string>> templates;
+Plugin::TemplateOverride* loaded_template = nullptr;
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
@@ -116,6 +133,31 @@ std::string pluginversion;
 std::string pluginauthor;
 std::string plugindescription;
 
+void ScanGenerator(std::string name, std::pair<std::string, std::string> gen_name) {
+    for (const fs::path entry : fs::directory_iterator(name)) {
+        if (fs::is_directory(entry)) {
+            ScanGenerator(entry.string(), gen_name);
+        }
+        else if (fs::is_regular_file(entry)) {
+            std::string temp;
+            std::string lines;
+            std::ifstream in(entry.string());
+            bool first = true;
+            while (std::getline(in, temp)) {
+                lines += (std::string)(first ? temp : "\n" + temp);
+                first = false;
+            }
+            in.close();
+            template_lists.dirpaths[gen_name].push_back(entry.string());
+            template_lists.templates[gen_name].push_back({ entry.filename().string(), lines });
+        }
+    }
+}
+void NextElement(float pos) {
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(pos);
+    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+}
 std::string ClearSpace(std::string str) {
     std::string retval = "";
     for (int i = 0; i < str.size(); i++)
@@ -128,6 +170,8 @@ std::string ToUpper(std::string str) {
     for (int i = 0; i < str.size(); i++)
         if (std::islower(str[i]))
             retval += std::toupper(str[i]);
+        else if (std::isspace(str[i]))
+            retval += "_";
         else
             retval += str[i];
     return retval;
@@ -524,6 +568,22 @@ void SavePlugin(const Plugin* plugin) {
                             modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).varname;
                             modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).model_type;
                             break;
+                        case Plugin::PROCEDURE_SELECTOR:
+                            modelement << "\n" << 9;
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).varname;
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).is_condition;
+                            if (me.widgets.at(me.page_names[i]).at({ j, l }).is_condition)
+                                modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).return_type;
+                            for (int b = 0; b < 12; b++)
+                                modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).dependencies[b];
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).procedure_title;
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).procedure_tooltip;
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).procedure_side;
+                            break;
+                        case Plugin::ENTITY_SELECTOR:
+                            modelement << "\n" << 10;
+                            modelement << "\n" << me.widgets.at(me.page_names[i]).at({ j, l }).varname;
+                            break;
                         }
                     }
                 }
@@ -546,9 +606,31 @@ void SavePlugin(const Plugin* plugin) {
                     out_code.close();
                 }
             }
+            modelement << "\n" << me.base_type;
             modelement.close();
         }
     }
+
+    if (!plugin->data.overrides.empty()) {
+        if (!fs::exists(pluginpath + "overrides/")) {
+            fs::create_directory(pluginpath + "overrides/");
+            fs::create_directory(pluginpath + "overrides/code/");
+        }
+        for (const Plugin::TemplateOverride ovr : plugin->data.overrides) {
+            std::ofstream ovr_(pluginpath + "overrides/" + ovr.name + ovr.version.first + ovr.version.second + ".txt");
+            ovr_ << ovr.name << "\n";
+            ovr_ << ovr.dirpath;
+            ovr_ << "\n" << ovr.version.first;
+            ovr_ << "\n" << ovr.version.second;
+            ovr_.close();
+            std::ofstream code(pluginpath + "overrides/code/" + ovr.name + ovr.version.first + ovr.version.second + ".txt");
+            bool first = false;
+            code << ovr.code;
+            code.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "overrides/"))
+        fs::remove_all(pluginpath + "overrides/");
 
 }
 Plugin LoadPlugin(std::string path) {
@@ -965,6 +1047,7 @@ Plugin LoadPlugin(std::string path) {
                         for (int l = 0; l < 2; l++) {
                             int type = 0;
                             int option_count = 0;
+                            std::string txt_temp;
                             modelement >> type;
                             switch (type) {
                             case 0:
@@ -1047,6 +1130,32 @@ Plugin LoadPlugin(std::string path) {
                                 modelement >> me.widgets[me.page_names[i]][{ j, l }].model_type;
                                 me.widgets[me.page_names[i]][{ j, l }].displayname = "[MODEL SELECTOR] - " + me.widgets[me.page_names[i]][{ j, l }].varname;
                                 break;
+                            case 9:
+                                me.widgets[me.page_names[i]][{ j, l }].type = Plugin::PROCEDURE_SELECTOR;
+                                me.widgets[me.page_names[i]][{ j, l }].type_int = 9;
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].varname;
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].is_condition;
+                                if (me.widgets[me.page_names[i]][{ j, l }].is_condition)
+                                    modelement >> me.widgets[me.page_names[i]][{ j, l }].return_type;
+                                for (int b = 0; b < 12; b++)
+                                    modelement >> me.widgets[me.page_names[i]][{ j, l }].dependencies[b];
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].procedure_title;
+                                std::getline(modelement, txt_temp);
+                                me.widgets[me.page_names[i]][{ j, l }].procedure_title.append(txt_temp);
+                                txt_temp.clear();
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].procedure_tooltip;
+                                std::getline(modelement, txt_temp);
+                                me.widgets[me.page_names[i]][{ j, l }].procedure_tooltip.append(txt_temp);
+                                txt_temp.clear();
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].procedure_side;
+                                me.widgets[me.page_names[i]][{ j, l }].displayname = "[PROCEDURE SELECTOR] - " + me.widgets[me.page_names[i]][{ j, l }].varname;
+                                break;
+                            case 10:
+                                me.widgets[me.page_names[i]][{ j, l }].type = Plugin::ENTITY_SELECTOR;
+                                me.widgets[me.page_names[i]][{ j, l }].type_int = 10;
+                                modelement >> me.widgets[me.page_names[i]][{ j, l }].varname;
+                                me.widgets[me.page_names[i]][{ j, l }].displayname = "[ENTITY SELECTOR] - " + me.widgets[me.page_names[i]][{ j, l }].varname;
+                                break;
                             }
                         }
                     }
@@ -1085,8 +1194,32 @@ Plugin LoadPlugin(std::string path) {
                         in_code.close();
                     }
                 }
+                modelement >> me.base_type;
                 modelement.close();
                 plugin.data.modelements.push_back(me);
+            }
+        }
+    }
+
+    if (fs::exists(path + "overrides/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "overrides/")) { // load template overrides
+            if (fs::is_regular_file(entry)) {
+                std::ifstream ovr_(entry.string());
+                Plugin::TemplateOverride ovr;
+                std::getline(ovr_, ovr.name);
+                std::getline(ovr_, ovr.dirpath);
+                std::getline(ovr_, ovr.version.first);
+                std::getline(ovr_, ovr.version.second);
+                ovr_.close();
+                std::ifstream code(path + "overrides/code/" + ovr.name + ovr.version.first + ovr.version.second + ".txt");
+                std::string temp;
+                bool first = true;
+                while (std::getline(code, temp)) {
+                    ovr.code += (std::string)(first ? temp : "\n" + temp);
+                    first = false;
+                }
+                code.close();
+                plugin.data.overrides.push_back(ovr);
             }
         }
     }
@@ -1653,11 +1786,10 @@ void ExportPlugin(const Plugin plugin) {
                     std::ofstream gt_("temp_data\\" + gt.name + version.first + version.second + ".txt");
                     if (!gt.manual_code) {
                         gt_ << "<#include \"procedures.java.ftl\">\n";
-                        if (gt.side != 1)
-                            gt_ << "@Mod.EventBusSubscriber\n";
-                        else
-                            gt_ << "@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.MOD, value = {Dist.CLIENT})\n";
+                        gt_ << "@Mod.EventBusSubscriber\n";
                         gt_ << "public class ${name}Procedure {\n";
+                        if (gt.side == 1)
+                            gt_ << "    @OnlyIn(Dist.CLIENT)\n";
                         gt_ << "    @SubscribeEvent\n";
                         gt_ << "    public static void onEventTriggered(" + gt.event_code.at(version) + " event) {\n";
                         gt_ << "        <#assign dependenciesCode><#compress>\n";
@@ -1817,7 +1949,7 @@ void ExportPlugin(const Plugin plugin) {
                 }
                 std::ofstream java_element("temp_data\\javacode\\" + ClearSpace(me.name) + ".java");
                 java_element << "package javacode;\n\n";
-                java_element << "import net.mcreator.element.GeneratableElement;\nimport net.mcreator.element.parts.MItemBlock;\nimport net.mcreator.minecraft.MCItem;\nimport net.mcreator.workspace.elements.ModElement;\nimport net.mcreator.workspace.resources.Model;\n\n";
+                java_element << "import net.mcreator.element.GeneratableElement;\nimport net.mcreator.element.parts.MItemBlock;\nimport net.mcreator.minecraft.MCItem;\nimport net.mcreator.workspace.elements.ModElement;\nimport net.mcreator.workspace.resources.Model;\nimport net.mcreator.element.parts.procedure.Procedure;\n\n";
                 java_element << "public class " + ClearSpace(me.name) + " extends GeneratableElement{\n";
                 for (const std::pair<std::pair<int, bool>, std::string> page : me.pages) {
                     for (int u = 0; u < page.first.first; u++) {
@@ -1836,6 +1968,20 @@ void ExportPlugin(const Plugin plugin) {
                                     zip.AddFile("temp_data\\tooltip_" + RegistryName(me.widgets.at(page.second).at({ u, h }).labeltext) + ".txt", "help\\default\\" + ClearSpace(me.name) + "\\" + RegistryName(me.widgets.at(page.second).at({ u, h }).labeltext) + ".md");
                                 }
                                 break;
+                            case Plugin::PROCEDURE_SELECTOR:
+                            {
+                                if (!tooptipfolder) {
+                                    tooptipfolder = true;
+                                    zip.AddFolder("help\\default\\" + ClearSpace(me.name));
+                                }
+                                std::ofstream tooltip_("temp_data\\" + me.widgets.at(page.second).at({ u, h }).varname + ".txt");
+                                tooltip_ << me.widgets.at(page.second).at({ u, h }).procedure_tooltip;
+                                tooltip_.close();
+                                zip.AddFile("temp_data\\" + me.widgets.at(page.second).at({ u, h }).varname + ".txt", "help\\default\\" + ClearSpace(me.name) + "\\" + me.widgets.at(page.second).at({ u, h }).varname + ".md");
+                                lang << "elementgui." + RegistryName(me.name) + "." + me.widgets.at(page.second).at({ u, h }).varname + "=" + me.widgets.at(page.second).at({ u, h }).procedure_title + "\n";
+                                java_element << "   public Procedure " + me.widgets.at(page.second).at({ u, h }).varname + ";\n";
+                                break;
+                            }
                             case Plugin::CHECKBOX:
                                 java_element << "	public boolean " + me.widgets.at(page.second).at({ u, h }).varname + ";\n";
                                 break;
@@ -1856,6 +2002,7 @@ void ExportPlugin(const Plugin plugin) {
                             case Plugin::TEXT_FIELD:
                             case Plugin::DROPDOWN:
                             case Plugin::TEXTURE_SELECTOR:
+                            case Plugin::ENTITY_SELECTOR:
                                 java_element << "	public String " + me.widgets.at(page.second).at({ u, h }).varname + ";\n";
                                 break;
                             case Plugin::NUMBER_FIELD:
@@ -1882,7 +2029,8 @@ void ExportPlugin(const Plugin plugin) {
                 java_gui << "import net.mcreator.ui.blockly.CompileNotesPanel;\nimport net.mcreator.ui.component.JColor;\nimport net.mcreator.ui.component.JEmptyBox;\nimport net.mcreator.ui.component.SearchableComboBox;\nimport net.mcreator.ui.component.util.ComboBoxUtil;\nimport net.mcreator.ui.component.util.ComponentUtils;\nimport net.mcreator.ui.component.util.PanelUtils;\nimport net.mcreator.ui.help.HelpUtils;\nimport net.mcreator.ui.init.L10N;\n";
                 java_gui << "import net.mcreator.ui.init.UIRES;\nimport net.mcreator.ui.laf.renderer.WTextureComboBoxRenderer;\nimport net.mcreator.ui.minecraft.*;\nimport net.mcreator.ui.modgui.ModElementGUI;\nimport net.mcreator.ui.validation.AggregatedValidationResult;\nimport net.mcreator.ui.validation.Validator;\nimport net.mcreator.ui.validation.component.VComboBox;\nimport net.mcreator.ui.validation.component.VTextField;\nimport net.mcreator.ui.validation.validators.TextFieldValidator;\n";
                 java_gui << "import net.mcreator.ui.workspace.resources.TextureType;\nimport net.mcreator.util.ListUtils;\nimport net.mcreator.util.StringUtils;\nimport net.mcreator.workspace.elements.ModElement;\nimport javacode." + ClearSpace(me.name) + ";\nimport javax.annotation.Nullable;\nimport javax.swing.*;\nimport javax.swing.border.TitledBorder;\nimport java.awt.*;\nimport java.io.File;\nimport java.net.URI;\nimport java.net.URISyntaxException;\n";
-                java_gui << "import java.util.List;\nimport java.util.*;\nimport java.util.stream.Collectors;\nimport java.util.stream.Stream;\nimport net.mcreator.ui.validation.ValidationGroup;\nimport net.mcreator.workspace.resources.Model;\nimport net.mcreator.ui.laf.renderer.ModelComboBoxRenderer;\nimport net.mcreator.ui.validation.validators.MCItemHolderValidator;\n\n";
+                java_gui << "import java.util.List;\nimport java.util.*;\nimport java.util.stream.Collectors;\nimport java.util.stream.Stream;\nimport net.mcreator.ui.validation.ValidationGroup;\nimport net.mcreator.workspace.resources.Model;\nimport net.mcreator.ui.laf.renderer.ModelComboBoxRenderer;\nimport net.mcreator.ui.validation.validators.MCItemHolderValidator;\nimport net.mcreator.workspace.elements.VariableTypeLoader;\nimport net.mcreator.ui.procedure.ProcedureSelector;\n";
+                java_gui << "import net.mcreator.blockly.data.Dependency;\n\n"; 
                 java_gui << "public class " + ClearSpace(me.name) + "GUI extends ModElementGUI<" + ClearSpace(me.name) + "> {\n";
                 for (const std::pair<std::pair<int, bool>, std::string> page : me.pages) {
                     for (int u = 0; u < page.first.first; u++) {
@@ -1914,6 +2062,7 @@ void ExportPlugin(const Plugin plugin) {
                                 java_gui << "	private MCItemHolder " + me.widgets.at(page.second).at({ u, h }).varname + ";\n";
                                 break;
                             case Plugin::DROPDOWN:
+                            {
                                 java_gui << "	private final JComboBox<String> " + me.widgets.at(page.second).at({ u, h }).varname + " = new JComboBox<>(\n";
                                 java_gui << "		new String[] { ";
                                 bool firstMember = true;
@@ -1922,6 +2071,13 @@ void ExportPlugin(const Plugin plugin) {
                                     firstMember = false;
                                 }
                                 java_gui << " });\n";
+                                break;
+                            }
+                            case Plugin::PROCEDURE_SELECTOR:
+                                java_gui << "   private ProcedureSelector " + me.widgets.at(page.second).at({ u, h }).varname + ";\n";
+                                break;
+                            case Plugin::ENTITY_SELECTOR:
+                                java_gui << "   private JComboBox<String> " + me.widgets.at(page.second).at({ u, h }).varname + " = new SearchableComboBox<>();\n";
                                 break;
                             }
                         }
@@ -1972,6 +2128,101 @@ void ExportPlugin(const Plugin plugin) {
                                     java_gui << "OTHER";
                                 java_gui << "));\n";
                                 break;
+                            case Plugin::PROCEDURE_SELECTOR:
+                            {
+                                java_gui << "       " + me.widgets.at(page.second).at({ u, h }).varname + " = new ProcedureSelector(this.withEntry(\"" + RegistryName(me.name) + "/" + me.widgets.at(page.second).at({ u, h }).varname + "\"), mcreator,\n";
+                                java_gui << "           L10N.t(\"elementgui." + RegistryName(me.name) + "." + me.widgets.at(page.second).at({ u, h }).varname + "\"),\n";
+                                if (me.widgets.at(page.second).at({ u, h }).procedure_side != 2) {
+                                    java_gui << "           ProcedureSelector.Side.";
+                                    if (me.widgets.at(page.second).at({ u, h }).procedure_side == 0)
+                                        java_gui << "SERVER, true,\n";
+                                    else
+                                        java_gui << "CLIENT, true,\n";
+                                }
+                                if (me.widgets.at(page.second).at({ u, h }).is_condition) {
+                                    java_gui << "           VariableTypeLoader.BuiltInTypes.";
+                                    std::string ret_type;
+                                    switch (me.widgets.at(page.second).at({ u, h }).return_type) {
+                                    case 0:
+                                        ret_type = "LOGIC";
+                                        break;
+                                    case 1:
+                                        ret_type = "NUMBER";
+                                        break;
+                                    case 2:
+                                        ret_type = "STRING";
+                                        break;
+                                    case 3:
+                                        ret_type = "DIRECTION";
+                                        break;
+                                    case 4:
+                                        ret_type = "BLOCKSTATE";
+                                        break;
+                                    case 5:
+                                        ret_type = "ITEMSTACK";
+                                        break;
+                                    case 6:
+                                        ret_type = "ACTIONRESULTTYPE";
+                                        break;
+                                    case 7:
+                                        ret_type = "ENTITY";
+                                        break;
+                                    }
+                                    java_gui << ret_type + ",\n";
+                                }
+                                java_gui << "           Dependency.fromString(\"";
+                                bool firstentry = true;
+                                for (int b = 0; b < 12; b++) {
+                                    std::string dep;
+                                    if (me.widgets.at(page.second).at({ u, h }).dependencies[b]) {
+                                        switch (b) {
+                                        case 0:
+                                            dep = "x:number";
+                                            break;
+                                        case 1:
+                                            dep = "y:number";
+                                            break;
+                                        case 2:
+                                            dep = "z:number";
+                                            break;
+                                        case 3:
+                                            dep = "entity:entity";
+                                            break;
+                                        case 4:
+                                            dep = "sourceentity:entity";
+                                            break;
+                                        case 5:
+                                            dep = "immediatesourceentity:entity";
+                                            break;
+                                        case 6:
+                                            dep = "world:world";
+                                            break;
+                                        case 7:
+                                            dep = "itemstack:itemstack";
+                                            break;
+                                        case 8:
+                                            dep = "blockstate:blockstate";
+                                            break;
+                                        case 9:
+                                            dep = "direction:direction";
+                                            break;
+                                        case 10:
+                                            dep = "advancement:advancement";
+                                            break;
+                                        case 11:
+                                            dep = "dimension:dimension";
+                                            break;
+                                        }
+                                        java_gui << (firstentry ? "" : "/") + dep;
+                                        firstentry = false;
+                                    }
+                                }
+                                java_gui << "\"));\n";
+                                break;
+                            }
+                            case Plugin::ENTITY_SELECTOR:
+                                java_gui << "       ElementUtil.loadAllSpawnableEntities(mcreator.getWorkspace()).forEach(e -> " + me.widgets.at(page.second).at({ u, h }).varname + ".addItem(e.getName()));\n";
+                                break;
                             }
                         }
                     }
@@ -2016,6 +2267,10 @@ void ExportPlugin(const Plugin plugin) {
                                 }
                                 break;
                             case Plugin::NUMBER_FIELD:
+                            case Plugin::PROCEDURE_SELECTOR:
+                            case Plugin::MODEL_SELECTOR:
+                            case Plugin::DROPDOWN:
+                            case Plugin::ENTITY_SELECTOR:
                                 java_gui << "		page" + pageIndexStr + "Panel.add(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n\n";
                                 break;
                             case Plugin::TEXTURE_SELECTOR:
@@ -2024,17 +2279,11 @@ void ExportPlugin(const Plugin plugin) {
                                 java_gui << "		page" + pageIndexStr + "group.addValidationElement(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n";
                                 java_gui << "       " + me.widgets.at(page.second).at({ u, h }).varname + ".setValidator(() -> { if (" + me.widgets.at(page.second).at({ u, h }).varname + ".getSelectedItem() != null && !" + me.widgets.at(page.second).at({ u, h }).varname + ".getSelectedItem().equals(\"\")) return Validator.ValidationResult.PASSED; else return new Validator.ValidationResult(Validator.ValidationResultType.ERROR, L10N.t(\"elementgui.common.error_texture_empty\")); });\n";
                                 break;
-                            case Plugin::MODEL_SELECTOR:
-                                java_gui << "		page" + pageIndexStr + "Panel.add(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n\n";
-                                break;
                             case Plugin::ITEM_SELECTOR:
                                 me.needs_validator[n - 1] = true;
                                 java_gui << "		page" + pageIndexStr + "Panel.add(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n\n";
                                 java_gui << "		page" + pageIndexStr + "group.addValidationElement(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n";
                                 java_gui << "       " + me.widgets.at(page.second).at({ u, h }).varname + ".setValidator(new MCItemHolderValidator(" + me.widgets.at(page.second).at({ u, h }).varname + "));\n";
-                                break;
-                            case Plugin::DROPDOWN:
-                                java_gui << "		page" + pageIndexStr + "Panel.add(" + me.widgets.at(page.second).at({ u, h }).varname + ");\n\n";
                                 break;
                             case Plugin::EMPTY_BOX:
                                 java_gui << "		page" + pageIndexStr + "Panel.add(new JEmptyBox());\n\n";
@@ -2108,6 +2357,9 @@ void ExportPlugin(const Plugin plugin) {
                                     java_gui << "				.collect(Collectors.toList())));\n";
                                 }
                                 break;
+                            case Plugin::PROCEDURE_SELECTOR:
+                                java_gui << "       " + me.widgets.at(page.second).at({ u, h }).varname + ".refreshListKeepSelected();\n";
+                                break;
                             }
                         }
                     }
@@ -2135,10 +2387,14 @@ void ExportPlugin(const Plugin plugin) {
                                 break;
                             case Plugin::TEXTURE_SELECTOR:
                             case Plugin::DROPDOWN:
+                            case Plugin::ENTITY_SELECTOR:
                                 java_gui << "		" + me.widgets.at(page.second).at({ u, h }).varname + ".setSelectedItem(element." + me.widgets.at(page.second).at({ u, h }).varname + ");\n";
                                 break;
                             case Plugin::ITEM_SELECTOR:
                                 java_gui << "		" + me.widgets.at(page.second).at({ u, h }).varname + ".setBlock(element." + me.widgets.at(page.second).at({ u, h }).varname + ");\n";
+                                break;
+                            case Plugin::PROCEDURE_SELECTOR:
+                                java_gui << "       " + me.widgets.at(page.second).at({ u, h }).varname + ".setSelectedProcedure(element." + me.widgets.at(page.second).at({ u, h }).varname + ");\n";
                                 break;
                             }
                         }
@@ -2166,10 +2422,14 @@ void ExportPlugin(const Plugin plugin) {
                                 break;
                             case Plugin::TEXTURE_SELECTOR:
                             case Plugin::DROPDOWN:
+                            case Plugin::ENTITY_SELECTOR:
                                 java_gui << "		element." + me.widgets.at(page.second).at({ u, h }).varname + " = (String) " + me.widgets.at(page.second).at({ u, h }).varname + ".getSelectedItem();\n";
                                 break;
                             case Plugin::ITEM_SELECTOR:
                                 java_gui << "		element." + me.widgets.at(page.second).at({ u, h }).varname + " = " + me.widgets.at(page.second).at({ u, h }).varname + ".getBlock();\n";
+                                break;
+                            case Plugin::PROCEDURE_SELECTOR:
+                                java_gui << "       element." + me.widgets.at(page.second).at({ u, h }).varname + " = " + me.widgets.at(page.second).at({ u, h }).varname + ".getSelectedProcedure();\n";
                                 break;
                             }
                         }
@@ -2182,7 +2442,37 @@ void ExportPlugin(const Plugin plugin) {
             }
             java_registry << "    public static void load() {";
             for (const Plugin::ModElement me : plugin.data.modelements) {
-                java_registry << "\n" << "        " + ToUpper(me.name) + " = register(new ModElementType<>(\"" + RegistryName(me.name) + "\", (Character) null, BaseType.OTHER, " + ClearSpace(me.name) + "GUI::new, " + ClearSpace(me.name) + ".class));";
+                std::string basetype;
+                switch (me.base_type) {
+                case 0:
+                    basetype = "OTHER";
+                    break;
+                case 1:
+                    basetype = "ARMOR";
+                    break;
+                case 2:
+                    basetype = "BIOME";
+                    break;
+                case 3:
+                    basetype = "BLOCK";
+                    break;
+                case 4:
+                    basetype = "BLOCKENTITY";
+                    break;
+                case 5:
+                    basetype = "ENTITY";
+                    break;
+                case 6:
+                    basetype = "GUI";
+                    break;
+                case 7:
+                    basetype = "ITEM";
+                    break;
+                case 8:
+                    basetype = "FEATURE";
+                    break;
+                }
+                java_registry << "\n" << "        " + ToUpper(me.name) + " = register(new ModElementType<>(\"" + RegistryName(me.name) + "\", (Character) null, BaseType." + basetype + ", " + ClearSpace(me.name) + "GUI::new, " + ClearSpace(me.name) + ".class));";
             }
             java_registry << "\n" << "    }";
             java_registry << "\n}";
@@ -2196,6 +2486,27 @@ void ExportPlugin(const Plugin plugin) {
             for (const std::string me : me_names) {
                 zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + ".class", "javacode\\" + ClearSpace(me) + ".class");
                 zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + "GUI.class", "javacode\\" + ClearSpace(me) + "GUI.class");
+            }
+        }
+        if (!plugin.data.overrides.empty()) {
+            for (Plugin::TemplateOverride ovr : loaded_plugin.data.overrides) {
+                std::string dir = "";
+                bool start = false;
+                for (int i = 0; i < ovr.dirpath.size(); i++) {
+                    if (start)
+                        dir += ovr.dirpath[i];
+                    if (ovr.dirpath[i] == '/' && !start)
+                        start = true;
+                }
+                std::string::size_type idx = dir.find(ovr.name);
+                if (idx != std::string::npos)
+                    dir.erase(idx, ovr.name.length());
+                zip.AddFolder(dir);
+                std::ofstream out("temp_data\\" + ovr.name);
+                bool first = false;
+                out << ovr.code;
+                out.close();
+                zip.AddFile("temp_data\\" + ovr.name, dir + ovr.name);
             }
         }
         lang.close();
@@ -2237,6 +2548,7 @@ int main() {
     InitWindow(1200, 600, "Plugin Builder");
     SetWindowMinSize(600, 300);
     SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    SetExitKey(0);
     rlImGuiSetup(true);
     SetGuiTheme();
     LoadAllPlugins();
@@ -2305,12 +2617,13 @@ int main() {
 
     while (!WindowShouldClose()) {
 
-        ClearBackground(BLACK);
+        ClearBackground(DARKGRAY);
         rlImGuiBegin();
 
         if (mainmenu) {
             ImGui::SetNextWindowPos({ 0, 0 });
             ImGui::SetNextWindowSize({ (float)GetScreenWidth() - 250, (float)GetScreenHeight() });
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, { 0.1254901960784314, 0.1098039215686275, 0.1098039215686275, 0.5 });
             if (ImGui::Begin("plugins", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoResize)) {
                 ImGui::BeginChild(1);
                 int i = 0;
@@ -2333,7 +2646,7 @@ int main() {
                         }
                         DrawRectangle(ImGui::GetWindowPos().x + ImGui::GetCursorPosX(), ImGui::GetWindowPos().y - ImGui::GetScrollY() + ImGui::GetCursorPosY() - 70, ImGui::GetColumnWidth(), 65, GRAY);
                         if (ImGui::IsItemHovered() || selected_plugin == i)
-                            DrawRectangle(ImGui::GetWindowPos().x + ImGui::GetCursorPosX(), ImGui::GetWindowPos().y - ImGui::GetScrollY() + ImGui::GetCursorPosY() - 70, ImGui::GetColumnWidth(), 65, (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && ImGui::IsItemHovered() ? BLACK : DARKGRAY));
+                            DrawRectangle(ImGui::GetWindowPos().x + ImGui::GetCursorPosX(), ImGui::GetWindowPos().y - ImGui::GetScrollY() + ImGui::GetCursorPosY() - 70, ImGui::GetColumnWidth(), 65, (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && ImGui::IsItemHovered() ? Color{ 240, 240, 240, 255 } : DARKGRAY));
                         DrawRectangleLines(ImGui::GetWindowPos().x + ImGui::GetCursorPosX(), ImGui::GetWindowPos().y - ImGui::GetScrollY() + ImGui::GetCursorPosY() - 70, ImGui::GetColumnWidth(), 65, WHITE);
                         i++;
                     }
@@ -2347,9 +2660,11 @@ int main() {
                 ImGui::EndChild();
                 ImGui::End();
             }
+            ImGui::PopStyleColor();
 
             ImGui::SetNextWindowPos({ (float)GetScreenWidth() - 251, 0 });
             ImGui::SetNextWindowSize({ 251, (float)GetScreenHeight() });
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, { 0.1254901960784314, 0.1098039215686275, 0.1098039215686275, 1 });
             if (ImGui::Begin("pluginoptions", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoResize)) {
                 ImGui::SetWindowFontScale(1.9);
                 if (ImGui::Button("Create new", { ImGui::GetColumnWidth(), 50 })) {
@@ -2387,6 +2702,7 @@ int main() {
                 }
                 ImGui::End();
             }
+            ImGui::PopStyleColor();
 
             if (delete_confirm) {
                 ImGui::OpenPopup("Are you sure?");
@@ -3443,7 +3759,7 @@ int main() {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::PushID(1);
-                    ImGui::Combo(" ", &open_tabs[current_tab].modelement->widgets[page][column].type_int, "Empty box\0Label\0Checkbox\0Number field\0Text field\0Dropdown\0Item selector\0Texture selector\0Model selector\0");
+                    ImGui::Combo(" ", &open_tabs[current_tab].modelement->widgets[page][column].type_int, "Empty box\0Label\0Checkbox\0Number field\0Text field\0Dropdown\0Item selector\0Texture selector\0Model selector\0Procedure selector\0Entity selector\0");
                     ImGui::PopID();
                     ImGui::BeginChild(666, { ImGui::GetColumnWidth(), 150 });
                     if (open_tabs[current_tab].modelement->widgets[page][column].type_int == 1) {
@@ -3599,6 +3915,66 @@ int main() {
                         ImGui::Combo(" ", &open_tabs[current_tab].modelement->widgets[page][column].texture_type, "Java");
                         ImGui::PopID();
                     }
+                    else if (open_tabs[current_tab].modelement->widgets[page][column].type_int == 9) {
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::Text("Procedure selector variable name: ");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushID(2);
+                        ImGui::InputText(" ", &open_tabs[current_tab].modelement->widgets[page][column].varname, ImGuiInputTextFlags_CharsNoBlank);
+                        ImGui::PopID();
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::Text("Procedure selector title: ");
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushID(10);
+                        ImGui::InputText(" ", &open_tabs[current_tab].modelement->widgets[page][column].procedure_title);
+                        ImGui::PopID();
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::Text("Procedure selector tooltip: ");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushID(11);
+                        ImGui::InputText(" ", &open_tabs[current_tab].modelement->widgets[page][column].procedure_tooltip);
+                        ImGui::PopID();
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::Text("Procedure selector side: ");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushID(12);
+                        ImGui::Combo(" ", &open_tabs[current_tab].modelement->widgets[page][column].procedure_side, "Server\0Client\0Both");
+                        ImGui::PopID();
+                        ImGui::Text("Procedure selector dependencies");
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        if (ImGui::BeginListBox(" ")) {
+                            for (int j = 0; j < 12; j++) {
+                                ImGui::Selectable(loaded_plugin.Dependencies[j].c_str(), &open_tabs[current_tab].modelement->widgets[page][column].dependencies[j]);
+                            }
+                        }
+                        ImGui::EndListBox();
+                        ImGui::PushID(3);
+                        ImGui::Checkbox("Use for condition", &open_tabs[current_tab].modelement->widgets[page][column].is_condition);
+                        ImGui::PopID();
+                        if (open_tabs[current_tab].modelement->widgets[page][column].is_condition) {
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::Text("Condition return type: ");
+                            ImGui::SameLine();
+                            ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                            ImGui::PushID(4);
+                            ImGui::Combo(" ", &open_tabs[current_tab].modelement->widgets[page][column].return_type, "Logic\0Number\0String\0Direction\0Blockstate\0ItemStack\0ActionResultType\0Entity");
+                            ImGui::PopID();
+                        }
+                    }
+                    else if (open_tabs[current_tab].modelement->widgets[page][column].type_int == 10) {
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::Text("Entity selector variable name: ");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushID(2);
+                        ImGui::InputText(" ", &open_tabs[current_tab].modelement->widgets[page][column].varname, ImGuiInputTextFlags_CharsNoBlank);
+                        ImGui::PopID();
+                    }
                     ImGui::EndChild();
                     ImGui::SetCursorPosX(150);
                     ImGui::SetCursorPosY(210);
@@ -3640,6 +4016,14 @@ int main() {
                         case 8:
                             open_tabs[current_tab].modelement->widgets[page][column].type = Plugin::MODEL_SELECTOR;
                             open_tabs[current_tab].modelement->widgets[page][column].displayname = "[MODEL SELECTOR] - " + open_tabs[current_tab].modelement->widgets[page][column].varname;
+                            break;
+                        case 9:
+                            open_tabs[current_tab].modelement->widgets[page][column].type = Plugin::PROCEDURE_SELECTOR;
+                            open_tabs[current_tab].modelement->widgets[page][column].displayname = "[PROCEDURE SELECTOR] - " + open_tabs[current_tab].modelement->widgets[page][column].varname;
+                            break;
+                        case 10:
+                            open_tabs[current_tab].modelement->widgets[page][column].type = Plugin::ENTITY_SELECTOR;
+                            open_tabs[current_tab].modelement->widgets[page][column].displayname = "[ENTITY SELECTOR] - " + open_tabs[current_tab].modelement->widgets[page][column].varname;
                             break;
                         }
                     }
@@ -3824,150 +4208,336 @@ int main() {
                 help_animation_set_pos = true;
             }
 
+            if (template_viewer) {
+                if (template_viewer_set_pos) {
+                    if (!ImGui::IsPopupOpen("Template scanner"))
+                        ImGui::OpenPopup("Template scanner");
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 550) / 2, (float)(GetScreenHeight() - 350) / 2 });
+                    template_index = -1;
+                }
+                template_viewer_set_pos = false;
+                ImGui::SetNextWindowSize({ 550, 350 }, ImGuiCond_Once);
+                if (ImGui::BeginPopupModal("Template scanner", &template_viewer, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+
+                    ImGui::BeginChild(49, { 150, ImGui::GetWindowHeight() - 35 }, true);
+                    if (ImGui::Button("Scan generator", { ImGui::GetColumnWidth(), 20 })) {
+
+                        char path[1024] = { 0 };
+                        int result = GuiFileDialog(DIALOG_OPEN_FILE, "Open generator plugin", path, "*.zip", "Generator plugin (.zip)");
+                        if (result == 1) {
+                            fs::create_directory("temp_generator");
+                            Zip zip_ = Zip::Open((std::string)path);
+                            zip_.SetUnzipDir("temp_generator");
+                            zip_.UnzipEverything();
+                            zip_.Close();
+                            std::pair<std::string, std::string> vers;
+                            for (const fs::path entry : fs::directory_iterator("temp_generator")) {
+                                if (fs::is_directory(entry) && entry.filename().string().find('-') != std::string::npos) {
+                                    std::string filename = entry.filename().string();
+                                    bool versionmode = false;
+                                    bool start = false;
+                                    for (int z = 0; z < filename.size(); z++) {
+                                        if (filename[z] == '-')
+                                            versionmode = true;
+                                        if (!versionmode)
+                                            vers.second += filename[z];
+                                        if (versionmode && start)
+                                            vers.first += filename[z];
+                                        if (versionmode)
+                                            start = true;
+                                    }
+                                    bool duplicate = false;
+                                    for (auto it = template_lists.versions.begin(); it != template_lists.versions.end(); it++) {
+                                        if (it->first == vers.first && it->second == vers.second)
+                                            duplicate = true;
+                                    }
+                                    if (!duplicate) {
+                                        template_lists.versions.push_back(vers);
+                                        ScanGenerator("temp_generator/" + vers.second + "-" + vers.first + "/templates", vers);
+                                    }
+                                    vers.first.clear();
+                                    vers.second.clear();
+                                }
+                            }
+                        }
+                        fs::remove_all("temp_generator");
+                    }
+                    ImGui::Separator();
+                    int i = 0;
+                    for (auto it = template_lists.versions.begin(); it != template_lists.versions.end(); it++) {
+                        std::string list_name = it->first + " " + it->second;
+                        if (ImGui::Selectable(list_name.c_str(), selected_list == i)) {
+                            selected_list = i;
+                            vers__.first = it->first;
+                            vers__.second = it->second;
+                            templates = template_lists.templates.at(vers__);
+                            dirpaths = template_lists.dirpaths.at(vers__);
+                            template_index = -1;
+                        }
+                        i++;
+                    }
+                    ImGui::EndChild();
+                    ImGui::SameLine();
+
+                    ImGui::BeginChild(50, { ImGui::GetColumnWidth(), ImGui::GetWindowHeight() - 35 }, true);
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::InputTextWithHint(" ", "Search...", &template_viewer_filter);
+                    ImGui::Separator();
+
+                    ImGui::BeginChild(51, { ImGui::GetColumnWidth(), 240 });
+                    i = 0;
+                    for (std::pair<std::string, std::string> templ : templates) {
+                        if (template_viewer_filter.empty() || templ.first.find(template_viewer_filter) != std::string::npos) {
+                            if (ImGui::Selectable(templ.first.c_str(), template_index == i)) {
+                                template_index = i;
+                                nameof__ = templ.first;
+                                code__ = templ.second;
+                                dirpath__ = dirpaths[i];
+                            }
+                        }
+                        i++;
+                    }
+                    ImGui::EndChild();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    if (ImGui::Button("Override selected template", { ImGui::GetColumnWidth(), 20 })) {
+                        if (template_index != -1 && selected_list != -1) {
+                            bool duplicate = false;
+                            for (Plugin::TemplateOverride ovrd : loaded_plugin.data.overrides) {
+                                duplicate = (ovrd.name == nameof__ && ovrd.version == vers__);
+                            }
+                            if (!duplicate) {
+                                Plugin::TemplateOverride override_;
+                                override_.version = vers__;
+                                override_.name = nameof__;
+                                override_.code = code__;
+                                override_.dirpath = dirpath__;
+                                template_viewer = false;
+                                loaded_plugin.data.overrides.push_back(override_);
+                            }
+                        }
+                    }
+
+                    ImGui::EndChild();
+
+                    ImGui::End();
+                }
+            }
+            else {
+                template_viewer_set_pos = true;
+            }
+
+            if (template_editor) {
+                if (template_editor_set_pos) {
+                    if (!ImGui::IsPopupOpen("Template editor"))
+                        ImGui::OpenPopup("Template editor");
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 600) / 2, (float)(GetScreenHeight() - 600) / 2 });
+                }
+                template_editor_set_pos = false;
+                ImGui::SetNextWindowSize({ 600, 600 }, ImGuiCond_Once);
+                if (ImGui::BeginPopupModal("Template editor", &template_editor, ImGuiWindowFlags_NoCollapse)) {
+                    ImGui::InputTextMultiline(" ", &loaded_template->code, { ImGui::GetColumnWidth(), ImGui::GetWindowHeight() - 63 }, ImGuiInputTextFlags_AllowTabInput);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Delete template override", { ImGui::GetColumnWidth(), 20 })) {
+                        template_editor = false;
+                        int i = 0;
+                        bool found = false;
+                        for (Plugin::TemplateOverride ovr : loaded_plugin.data.overrides) {
+                            if (ovr.name == loaded_template->name && ovr.version == loaded_template->version) {
+                                found = true;
+                                break;
+                            }
+                            i++;
+                        }
+                        fs::remove("plugins/" + loaded_plugin.data.name + "/overrides/" + loaded_template->name + loaded_template->version.first + loaded_template->version.second + ".txt");
+                        fs::remove("plugins/" + loaded_plugin.data.name + "/overrides/code/" + loaded_template->name + loaded_template->version.first + loaded_template->version.second + ".txt");
+                        loaded_plugin.data.overrides.erase(loaded_plugin.data.overrides.begin() + i);
+                    }
+                    ImGui::End();
+                }
+            }
+            else {
+                if (!template_editor_set_pos)
+                    loaded_template = nullptr;
+                template_editor_set_pos = true;
+            }
+
             // directory tree
             ImGui::SetNextWindowPos({ 0, 18 });
             ImGui::SetNextWindowSize({ 200, (float)GetScreenHeight() - 18 }, ImGuiCond_Once);
             ImGui::SetNextWindowSizeConstraints({ 100, (float)GetScreenHeight() - 18 }, { 500, (float)GetScreenHeight() - 18 });
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, { 0.1254901960784314, 0.1098039215686275, 0.1098039215686275, 1 });
+            ImGui::PushStyleColor(ImGuiCol_Header, { 0.2000000029802322f, 0.2000000029802322f, 0.2000000029802322f, 1.0f });
             if (ImGui::Begin("Project files", NULL, ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
                 offset = ImGui::GetWindowWidth() - 200;
-                if (ImGui::CollapsingHeader("Procedures")) {
-                    if (!loaded_plugin.data.procedures.empty()) {
-                        for (Plugin::Procedure& procedure : loaded_plugin.data.procedures) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(procedure.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), procedure.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = PROCEDURE;
-                                    window.procedure = &procedure;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(procedure.name);
+                if (ImGui::BeginTabBar("projectfiles")) {
+                    if (ImGui::BeginTabItem("Additions")) {
+                        if (ImGui::CollapsingHeader("Procedures")) {
+                            if (!loaded_plugin.data.procedures.empty()) {
+                                for (Plugin::Procedure& procedure : loaded_plugin.data.procedures) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(procedure.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), procedure.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = PROCEDURE;
+                                            window.procedure = &procedure;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(procedure.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Global Triggers")) {
-                    if (!loaded_plugin.data.globaltriggers.empty()) {
-                        for (Plugin::GlobalTrigger& globaltrigger : loaded_plugin.data.globaltriggers) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(globaltrigger.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), globaltrigger.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = GLOBALTRIGGER;
-                                    window.globaltrigger = &globaltrigger;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(globaltrigger.name);
+                        if (ImGui::CollapsingHeader("Global Triggers")) {
+                            if (!loaded_plugin.data.globaltriggers.empty()) {
+                                for (Plugin::GlobalTrigger& globaltrigger : loaded_plugin.data.globaltriggers) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(globaltrigger.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), globaltrigger.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = GLOBALTRIGGER;
+                                            window.globaltrigger = &globaltrigger;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(globaltrigger.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Blockly Categories")) {
-                    if (!loaded_plugin.data.categories.empty()) {
-                        for (Plugin::Category& category : loaded_plugin.data.categories) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(category.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), category.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = CATEGORY;
-                                    window.category = &category;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(category.name);
+                        if (ImGui::CollapsingHeader("Blockly Categories")) {
+                            if (!loaded_plugin.data.categories.empty()) {
+                                for (Plugin::Category& category : loaded_plugin.data.categories) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(category.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), category.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = CATEGORY;
+                                            window.category = &category;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(category.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Datalists")) {
-                    if (!loaded_plugin.data.datalists.empty()) {
-                        for (Plugin::Datalist& datalist : loaded_plugin.data.datalists) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(datalist.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), datalist.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = DATALIST;
-                                    window.datalist = &datalist;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(datalist.name);
+                        if (ImGui::CollapsingHeader("Datalists")) {
+                            if (!loaded_plugin.data.datalists.empty()) {
+                                for (Plugin::Datalist& datalist : loaded_plugin.data.datalists) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(datalist.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), datalist.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = DATALIST;
+                                            window.datalist = &datalist;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(datalist.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Translations")) {
-                    if (!loaded_plugin.data.translations.empty()) {
-                        for (Plugin::Translation& translation : loaded_plugin.data.translations) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(translation.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), translation.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = TRANSLATION;
-                                    window.translation = &translation;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(translation.name);
+                        if (ImGui::CollapsingHeader("Translations")) {
+                            if (!loaded_plugin.data.translations.empty()) {
+                                for (Plugin::Translation& translation : loaded_plugin.data.translations) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(translation.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), translation.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = TRANSLATION;
+                                            window.translation = &translation;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(translation.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("APIs")) {
-                    if (!loaded_plugin.data.apis.empty()) {
-                        for (Plugin::Api& api : loaded_plugin.data.apis) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(api.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), api.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = API;
-                                    window.api = &api;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(api.name);
+                        if (ImGui::CollapsingHeader("APIs")) {
+                            if (!loaded_plugin.data.apis.empty()) {
+                                for (Plugin::Api& api : loaded_plugin.data.apis) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(api.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), api.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = API;
+                                            window.api = &api;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(api.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Animations")) {
-                    if (!loaded_plugin.data.animations.empty()) {
-                        for (Plugin::Animation& at : loaded_plugin.data.animations) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(at.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), at.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = ANIMATION;
-                                    window.animation = &at;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(at.name);
+                        if (ImGui::CollapsingHeader("Animations")) {
+                            if (!loaded_plugin.data.animations.empty()) {
+                                for (Plugin::Animation& at : loaded_plugin.data.animations) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(at.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), at.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = ANIMATION;
+                                            window.animation = &at;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(at.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-                if (ImGui::CollapsingHeader("Mod Elements")) {
-                    if (!loaded_plugin.data.modelements.empty()) {
-                        for (Plugin::ModElement& me : loaded_plugin.data.modelements) {
-                            ImGui::Bullet();
-                            ImGui::SameLine();
-                            if (ImGui::MenuItem(me.name.c_str())) {
-                                if (std::find(open_tab_names.begin(), open_tab_names.end(), me.name) == open_tab_names.end()) {
-                                    TabWindow window;
-                                    window.type = MODELEMENT;
-                                    window.modelement = &me;
-                                    open_tabs.push_back(window);
-                                    open_tab_names.push_back(me.name);
+                        if (ImGui::CollapsingHeader("Mod Elements")) {
+                            if (!loaded_plugin.data.modelements.empty()) {
+                                for (Plugin::ModElement& me : loaded_plugin.data.modelements) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(me.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), me.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = MODELEMENT;
+                                            window.modelement = &me;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(me.name);
+                                        }
+                                    }
                                 }
                             }
                         }
+                        ImGui::EndTabItem();
                     }
+                    if (ImGui::BeginTabItem("Overrides")) {
+                        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2000000029802322f, 0.2000000029802322f, 0.2000000029802322f, 1.0f));
+                        ImGui::InputTextWithHint(" ", "Search...", &template_filter);
+                        ImGui::PopStyleColor();
+                        if (ImGui::Button("New override", { ImGui::GetColumnWidth(), 20 })) {
+                            template_viewer = true;
+                        }
+                        ImGui::Separator();
+
+                        for (Plugin::TemplateOverride& ovr : loaded_plugin.data.overrides) {
+                            if (template_filter.empty() || ovr.name.find(template_filter) != std::string::npos) {
+                                std::string nameof = ovr.name + " | " + ovr.version.first + " " + ovr.version.second;
+                                if (ImGui::Selectable(nameof.c_str())) {
+                                    loaded_template = &ovr;
+                                    template_editor = true;
+                                }
+                            }
+                        }
+
+                        ImGui::EndTabItem();
+                    }
+                    ImGui::EndTabBar();
                 }
                 ImGui::End();
             }
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
 
             // tabs
             ImGui::SetNextWindowPos({ 199 + offset, 12 });
@@ -3999,19 +4569,26 @@ int main() {
                             switch (open_tabs[i].type) {
                             case MODELEMENT:
                                 ImGui::Spacing();
+                                ImGui::BeginChild(23, { ImGui::GetColumnWidth(), 122 }, true);
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Mod element name: ");
-                                ImGui::SameLine();
+                                NextElement(180);
                                 ImGui::InputText(" ", &open_tabs[i].modelement->name, ImGuiInputTextFlags_ReadOnly);
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Mod element description: ");
-                                ImGui::SameLine();
+                                NextElement(180);
                                 ImGui::PushID(2);
                                 ImGui::InputText(" ", &open_tabs[i].modelement->description);
                                 ImGui::PopID();
                                 ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Mod element base type: ");
+                                NextElement(180);
+                                ImGui::PushID(8);
+                                ImGui::Combo(" ", &open_tabs[i].modelement->base_type, "Other\0Armor\0Biome\0Block\0BlockEntity\0Entity\0GUI\0Item\0Feature\0");
+                                ImGui::PopID();
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Mod element icons: ");
-                                ImGui::SameLine();
+                                NextElement(180);
                                 if (rlImGuiImageButtonSize("light", (open_tabs[i].modelement->dark_icon_path.empty() || open_tabs[i].modelement->dark_icon_path == "0" ? &blank : &open_tabs[i].modelement->dark_icon), {30, 30})) {
                                     char path[1024] = { 0 };
                                     int result = GuiFileDialog(DIALOG_OPEN_FILE, "Select dark icon", path, "*.png", "PNG image");
@@ -4043,6 +4620,7 @@ int main() {
                                     ImGui::EndTooltip();
                                 }
                                 ImGui::PopID();
+                                ImGui::EndChild();
                                 ImGui::Spacing();
                                 if (ImGui::BeginTabBar("args")) {
                                     if (ImGui::BeginTabItem("Element GUI")) {
@@ -4088,6 +4666,7 @@ int main() {
                                                     ImGui::AlignTextToFramePadding();
                                                     ImGui::Text("Page rows: ");
                                                     ImGui::SameLine();
+                                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                                     ImGui::SliderInt(" ", &page.first.first, 1, 100);
                                                     ImGui::EndTabItem();
                                                 }
@@ -4103,6 +4682,7 @@ int main() {
                                         if (ImGui::BeginTabBar("types")) {
                                             if (ImGui::BeginTabItem("Global templates")) {
                                                 ImGui::Spacing();
+                                                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                                 if (ImGui::BeginListBox(" ")) {
                                                     for (int o = 0; o < open_tabs[i].modelement->global_templates.size(); o++) {
                                                         bool selected_ = o == open_tabs[i].modelement->selected_global;
@@ -4129,6 +4709,7 @@ int main() {
                                             }
                                             if (ImGui::BeginTabItem("Local templates")) {
                                                 ImGui::Spacing();
+                                                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                                 if (ImGui::BeginListBox(" ")) {
                                                     for (int o = 0; o < open_tabs[i].modelement->local_templates.size(); o++) {
                                                         bool selected_ = o == open_tabs[i].modelement->selected_local;
@@ -4184,8 +4765,9 @@ int main() {
                             case ANIMATION:
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Animation name: ");
+                                ImGui::Text("Animation name:");
                                 ImGui::SameLine();
+                                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                 ImGui::InputText(" ", &open_tabs[i].animation->name, ImGuiInputTextFlags_ReadOnly);
                                 ImGui::Spacing();
                                 ImGui::Text("Animation code");
@@ -4210,6 +4792,7 @@ int main() {
                                     ImGui::Text("Code: ");
                                     ImGui::SameLine();
                                     ImGui::PushID(-12 - l);
+                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                     ImGui::InputText(" ", &open_tabs[i].animation->lines[l].second);
                                     ImGui::PopID();
                                 }
@@ -4217,8 +4800,9 @@ int main() {
                             case API:
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("API name: ");
+                                ImGui::Text("API name:");
                                 ImGui::SameLine();
+                                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                 ImGui::InputText(" ", &open_tabs[i].api->name, ImGuiInputTextFlags_ReadOnly);
                                 ImGui::Spacing();
                                 ImGui::Text("Gradle templates");
@@ -4240,12 +4824,12 @@ int main() {
                             case TRANSLATION:
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Translation name: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Translation name:");
+                                NextElement(125);
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Localization: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Localization:");
+                                NextElement(125);
                                 ImGui::PushID(2);
                                 ImGui::InputTextWithHint(" ", "fr_FR", &open_tabs[i].translation->language, ImGuiInputTextFlags_CharsNoBlank);
                                 ImGui::PopID();
@@ -4261,18 +4845,18 @@ int main() {
                                 }
                                 for (int l = 0; l < open_tabs[i].translation->keys.size(); l++) {
                                     ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("Translation key: ");
+                                    ImGui::Text("Translation key:");
                                     ImGui::SameLine();
                                     ImGui::PushID(10 + l);
-                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth() / 3);
+                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth() / 2.5);
                                     ImGui::InputText(" ", &open_tabs[i].translation->keys[l].first, ImGuiInputTextFlags_CharsNoBlank);
                                     ImGui::PopID();
                                     ImGui::SameLine();
                                     ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("Translation text: ");
+                                    ImGui::Text("Translation text:");
                                     ImGui::SameLine();
                                     ImGui::PushID(-10 - l);
-                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth() / 1.5);
+                                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                                     ImGui::InputText(" ", &open_tabs[i].translation->keys[l].second);
                                     ImGui::PopID();
                                 }
@@ -4373,15 +4957,16 @@ int main() {
                                     ImGui::EndTabBar();
                                 }
                                 break;
-                            case PROCEDURE:
-                                ImGui::Spacing();
+                            case PROCEDURE: {
+                                bool longer = open_tabs[i].procedure->requires_api;
+                                ImGui::BeginChild(23, { ImGui::GetColumnWidth(), (!longer ? 173.f : 196.f) }, true);
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure name: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Procedure name:");
+                                NextElement(205);
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure type: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Procedure type:");
+                                NextElement(205);
                                 ImGui::PushID(1);
                                 ImGui::Combo(" ", &open_tabs[i].procedure->type, "Input\0Output");
                                 if (open_tabs[i].procedure->type == 1) {
@@ -4401,13 +4986,13 @@ int main() {
                                 }
                                 ImGui::PopID();
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure color: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Procedure color:");
+                                NextElement(205);
                                 ImGui::ColorEdit4(" ", cols);
                                 open_tabs[i].procedure->color = { cols[0], cols[1], cols[2], cols[3] };
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure category: ");
-                                ImGui::SameLine();
+                                NextElement(205);
                                 ImGui::PushID(2);
                                 if (open_tabs[i].procedure->category > 16) {
                                     if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].procedure->category_name) == loaded_plugin.data.filenames.end()) {
@@ -4427,8 +5012,8 @@ int main() {
                                 ImGui::PopID();
                                 ImGui::PushID(772);
                                 ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure translation key: ");
-                                ImGui::SameLine();
+                                ImGui::Text("Procedure translation key:");
+                                NextElement(205);
                                 ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
                                 ImGui::PopID();
                                 ImGui::Checkbox("Requires world dependency", &open_tabs[i].procedure->world_dependency);
@@ -4438,11 +5023,12 @@ int main() {
                                 if (open_tabs[i].procedure->requires_api) {
                                     ImGui::PushID(2838);
                                     ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("API name: ");
-                                    ImGui::SameLine();
+                                    ImGui::Text("API name:");
+                                    NextElement(205);
                                     ImGui::InputText(" ", &open_tabs[i].procedure->api_name);
                                     ImGui::PopID();
                                 }
+                                ImGui::EndChild();
                                 ImGui::Spacing();
                                 ImGui::Spacing();
                                 ImGui::Text("Procedure block components");
@@ -4621,7 +5207,7 @@ int main() {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
                                             current_version = l;
-                                            ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]], {ImGui::GetColumnWidth(), 400}, ImGuiInputTextFlags_AllowTabInput);
+                                            ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]], { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
                                             old_current_version = l;
                                             ImGui::EndTabItem();
                                         }
@@ -4629,6 +5215,7 @@ int main() {
                                     ImGui::EndTabBar();
                                 }
                                 break;
+                            }
                             case GLOBALTRIGGER:
                                 if (!open_tabs[i].globaltrigger->manual_code) {
                                     ImGui::Spacing();

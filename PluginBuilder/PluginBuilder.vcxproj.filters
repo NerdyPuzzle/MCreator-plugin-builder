@@ -101,6 +101,9 @@
     <ClInclude Include="unzip.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ImTween.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="PluginBuilder.rc">

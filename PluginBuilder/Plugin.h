@@ -123,7 +123,7 @@ public:
 	};
 
 	static enum WidgetType {
-		EMPTY_BOX, LABEL, CHECKBOX, NUMBER_FIELD, TEXT_FIELD, DROPDOWN, ITEM_SELECTOR, TEXTURE_SELECTOR, MODEL_SELECTOR
+		EMPTY_BOX, LABEL, CHECKBOX, NUMBER_FIELD, TEXT_FIELD, DROPDOWN, ITEM_SELECTOR, TEXTURE_SELECTOR, MODEL_SELECTOR, PROCEDURE_SELECTOR, ENTITY_SELECTOR
 	};
 
 	struct Widget {
@@ -145,6 +145,12 @@ public:
 		bool blocks_only = false;
 		int texture_type = 0;
 		int model_type = 0;
+		bool is_condition = false;
+		int return_type = 0;
+		bool dependencies[12] = { false, false, false, false, false, false, false, false, false, false, false, false };
+		std::string procedure_title;
+		std::string procedure_tooltip;
+		int procedure_side = 0;
 	};
 
 	struct ModElement {
@@ -165,7 +171,21 @@ public:
 		int selected_global = -1;
 		int selected_local = -1;
 		std::deque<bool> needs_validator;
+		int base_type = 0;
 		std::string name;
+	};
+
+	struct TemplateOverride {
+		std::pair<std::string, std::string> version; // version, generator
+		std::string code;
+		std::string dirpath;
+		std::string name;
+	};
+
+	struct TemplateLists {
+		std::vector<std::pair<std::string, std::string>> versions;
+		std::map< std::pair<std::string, std::string>, std::vector<std::string>> dirpaths;
+		std::map< std::pair<std::string, std::string> /* give a version to get template list */, std::vector< std::pair< std::string, std::string > /* a template (name/text) */ > /* end of result vector (template list) */ > templates;
 	};
 
 private:
@@ -186,6 +206,7 @@ private:
 		std::vector<Api> apis;
 		std::vector<Animation> animations;
 		std::vector<ModElement> modelements;
+		std::vector<TemplateOverride> overrides;
 		std::vector<std::string> filenames;
 	};
 
