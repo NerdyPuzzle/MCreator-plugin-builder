@@ -1,7 +1,7 @@
 Animated Bow
 Add the custom bow with arrow pullback animation
-D:\Mod texture\animatedbowpluginicon.png
-D:\Mod texture\animatedbowpluginicon.png
+C:\Users\TheMLGgamer\Pictures\aa.png
+C:\Users\TheMLGgamer\Pictures\Screenshots\Screenshot (198).png
 1
 10
 Ranged item

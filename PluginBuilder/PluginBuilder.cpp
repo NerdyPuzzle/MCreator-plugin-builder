@@ -133,6 +133,16 @@ std::string pluginversion;
 std::string pluginauthor;
 std::string plugindescription;
 
+std::string GetGenerator(int type) {
+    switch (type) {
+    case 0:
+        return "Forge";
+    case 1:
+        return "Fabric";
+    case 2:
+        return "NeoForge";
+    }
+}
 void ScanGenerator(std::string name, std::pair<std::string, std::string> gen_name) {
     for (const fs::path entry : fs::directory_iterator(name)) {
         if (fs::is_directory(entry)) {
@@ -1310,7 +1320,6 @@ void ExportPlugin(const Plugin plugin) {
                 for (const Plugin::Category ct : plugin.data.categories) {
                     std::ofstream ct_("temp_data\\" + RegistryName(ct.name) + ".json");
                     ct_ << "{\n";
-                    ct_ << "  \"name\": \"" + ct.name + "\",\n";
                     ct_ << "  \"color\": \"" + ImVecToHex(ct.color) + "\",\n";
                     ct_ << "  \"api\": " + (std::string)(ct.isapi ? "true\n" : "false\n");
                     ct_ << "}";
@@ -1415,7 +1424,9 @@ void ExportPlugin(const Plugin plugin) {
                     if (pc.category <= 16) {
                         if (pc.category_name == "Block data")
                             pc_ << "blockdata";
-                        else if (pc.category_name == "Block management")
+                        else if (pc.category_name == "Block management") // legacy support to not break plugins
+                            pc_ << "blockactions";
+                        else if (pc.category_name == "Block management (2023.4+ = Block actions)")
                             pc_ << "blockactions";
                         else if (pc.category_name == "Command parameters")
                             pc_ << "commands";
@@ -1425,13 +1436,19 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "energyandfluid";
                         else if (pc.category_name == "Entity data")
                             pc_ << "entitydata";
-                        else if (pc.category_name == "Entity management")
+                        else if (pc.category_name == "Entity management") // legacy support to not break plugins
                             pc_ << "entitymanagement";
-                        else if (pc.category_name == "Item procedures")
+                        else if (pc.category_name == "Entity management (2023.4+ = Entity actions)")
+                            pc_ << "entitymanagement";
+                        else if (pc.category_name == "Item procedures") // legacy support to not break plugins
+                            pc_ << "itemmanagement";
+                        else if (pc.category_name == "Item procedures (2023.4+ = Item actions)")
                             pc_ << "itemmanagement";
                         else if (pc.category_name == "Player data")
                             pc_ << "playerdata";
-                        else if (pc.category_name == "Player procedures")
+                        else if (pc.category_name == "Player procedures") // legacy support to not break plugins
+                            pc_ << "playermanagement";
+                        else if (pc.category_name == "Player procedures (2023.4+ = Player actions)")
                             pc_ << "playermanagement";
                         else if (pc.category_name == "Projectile procedures")
                             pc_ << "projectilemanagement";
@@ -1439,7 +1456,9 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "guimanagement";
                         else if (pc.category_name == "World data")
                             pc_ << "worlddata";
-                        else if (pc.category_name == "World management")
+                        else if (pc.category_name == "World management") // legacy support to not break plugins
+                            pc_ << "worldmanagement";
+                        else if (pc.category_name == "World management (2023.4+ = World actions)")
                             pc_ << "worldmanagement";
                         else if (pc.category_name == "Minecraft components")
                             pc_ << "mcelements";
@@ -1447,6 +1466,12 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "logicloops";
                         else if (pc.category_name == "Advanced")
                             pc_ << "advanced";
+                        else if (pc.category_name == "Damage procedures (2023.4+)")
+                            pc_ << "damagesources";
+                        else if (pc.category_name == "Item data (2023.4+)")
+                            pc_ << "itemdata";
+                        else if (pc.category_name == "World scoreboard (2023.4+)")
+                            pc_ << "scoreboard";
                     }
                     else
                         pc_ << RegistryName(pc.category_name);
@@ -2483,9 +2508,13 @@ void ExportPlugin(const Plugin plugin) {
             std::system(cmd_.c_str());
             zip.AddFile("temp_data\\javacode\\" + ClearSpace(plugin.data.name) + "Launcher.class", "javacode\\" + ClearSpace(plugin.data.name) + "Launcher.class");
             zip.AddFile("temp_data\\javacode\\" + ClearSpace(plugin.data.name) + "ElementTypes.class", "javacode\\" + ClearSpace(plugin.data.name) + "ElementTypes.class");
+            //zip.AddFile("temp_data\\javacode\\" + ClearSpace(plugin.data.name) + "Launcher.java", "javacode\\" + ClearSpace(plugin.data.name) + "Launcher.java");
+            //zip.AddFile("temp_data\\javacode\\" + ClearSpace(plugin.data.name) + "ElementTypes.java", "javacode\\" + ClearSpace(plugin.data.name) + "ElementTypes.java");
             for (const std::string me : me_names) {
                 zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + ".class", "javacode\\" + ClearSpace(me) + ".class");
                 zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + "GUI.class", "javacode\\" + ClearSpace(me) + "GUI.class");
+                //zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + ".java", "javacode\\" + ClearSpace(me) + ".java");
+                //zip.AddFile("temp_data\\javacode\\" + ClearSpace(me) + "GUI.java", "javacode\\" + ClearSpace(me) + "GUI.java");
             }
         }
         if (!plugin.data.overrides.empty()) {
@@ -3549,54 +3578,54 @@ int main() {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::PushID(709);
-                    ImGui::Combo(" ", &generator_type, "Forge\0Fabric");
+                    ImGui::Combo(" ", &generator_type, "Forge\0Fabric\0NeoForge");
                     ImGui::PopID();
                     ImGui::Spacing();
                     ImGui::SetCursorPosX(100);
                     bool tooltip = generator_type == 1 && versiontype == GLOBALTRIGGER && !open_tabs[current_tab].globaltrigger->manual_code;
                     bool should_add = false;
                     if (versiontype == PROCEDURE) {
-                        should_add = std::find(open_tabs[current_tab].procedure->version_names.begin(), open_tabs[current_tab].procedure->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].procedure->version_names.end();
+                        should_add = std::find(open_tabs[current_tab].procedure->version_names.begin(), open_tabs[current_tab].procedure->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].procedure->version_names.end();
                     }
                     else if (versiontype == GLOBALTRIGGER) {
-                        should_add = std::find(open_tabs[current_tab].globaltrigger->version_names.begin(), open_tabs[current_tab].globaltrigger->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].globaltrigger->version_names.end();
+                        should_add = std::find(open_tabs[current_tab].globaltrigger->version_names.begin(), open_tabs[current_tab].globaltrigger->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].globaltrigger->version_names.end();
                     }
                     else if (versiontype == DATALIST) {
-                        should_add = std::find(open_tabs[current_tab].datalist->version_names.begin(), open_tabs[current_tab].datalist->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].datalist->version_names.end();
+                        should_add = std::find(open_tabs[current_tab].datalist->version_names.begin(), open_tabs[current_tab].datalist->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].datalist->version_names.end();
                     }
                     else if (versiontype == API) {
-                        should_add = std::find(open_tabs[current_tab].api->version_names.begin(), open_tabs[current_tab].api->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].api->version_names.end();
+                        should_add = std::find(open_tabs[current_tab].api->version_names.begin(), open_tabs[current_tab].api->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].api->version_names.end();
                     }
                     else if (versiontype == MODELEMENT) {
-                        should_add = std::find(open_tabs[current_tab].modelement->version_names.begin(), open_tabs[current_tab].modelement->version_names.end(), version_mc + (generator_type == 0 ? "Forge" : "Fabric")) == open_tabs[current_tab].modelement->version_names.end();
+                        should_add = std::find(open_tabs[current_tab].modelement->version_names.begin(), open_tabs[current_tab].modelement->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].modelement->version_names.end();
                     }
                     else {
                         should_add = true;
                     }
                     if (ImGui::Button("Add", { 100, 30 }) && should_add) {
                         if (versiontype == GLOBALTRIGGER && !tooltip) {
-                            open_tabs[current_tab].globaltrigger->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
-                            open_tabs[current_tab].globaltrigger->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            open_tabs[current_tab].globaltrigger->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].globaltrigger->version_names.push_back(version_mc + GetGenerator(generator_type));
                             addversion = false;
                         }
                         else if (versiontype == PROCEDURE) {
-                            open_tabs[current_tab].procedure->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
-                            open_tabs[current_tab].procedure->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            open_tabs[current_tab].procedure->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].procedure->version_names.push_back(version_mc + GetGenerator(generator_type));
                             addversion = false;
                         }
                         else if (versiontype == DATALIST) {
-                            open_tabs[current_tab].datalist->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
-                            open_tabs[current_tab].datalist->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            open_tabs[current_tab].datalist->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].datalist->version_names.push_back(version_mc + GetGenerator(generator_type));
                             addversion = false;
                         }
                         else if (versiontype == API) {
-                            open_tabs[current_tab].api->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
-                            open_tabs[current_tab].api->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            open_tabs[current_tab].api->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].api->version_names.push_back(version_mc + GetGenerator(generator_type));
                             addversion = false;
                         }
                         else if (versiontype == MODELEMENT) {
-                            open_tabs[current_tab].modelement->versions.push_back({ version_mc, (generator_type == 0 ? "Forge" : "Fabric") });
-                            open_tabs[current_tab].modelement->version_names.push_back(version_mc + (generator_type == 0 ? "Forge" : "Fabric"));
+                            open_tabs[current_tab].modelement->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].modelement->version_names.push_back(version_mc + GetGenerator(generator_type));
                             for (const std::string t : open_tabs[current_tab].modelement->global_templates) {
                                 open_tabs[current_tab].modelement->code[{ t, open_tabs[current_tab].modelement->versions[open_tabs[current_tab].modelement->versions.size() - 1] }] = "package ${package}.global_templates;\n\npublic class " + t + " {\n\n}";
                             }
@@ -4551,10 +4580,10 @@ int main() {
                             current_tab = i;
                             tabsize = open_tabs.size();
 
-                            float cols[4]; // stupid thing wont work in a switch
+                            float cols[4]; // stupid thing wont work in a switch // UPDATE: I'm just stupid but oh well
                             int entryID = 888;
                             int mappingID = 4999;
-                            std::vector<std::string> categories = { "Block data", "Block management", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management", "Item procedures", "Player data", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World data", "World management", "Minecraft components", "Flow control", "Advanced" };
+                            std::vector<std::string> categories = { "Block data", "Block management (2023.4+ = Block actions)", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management (2023.4+ = Entity actions)", "Item procedures (2023.4+ = Item actions)", "Player data", "Player procedures (2023.4+ = Player actions)", "Projectile procedures", "Slot & GUI procedures", "World data", "World management (2023.4+ = World actions)", "Minecraft components", "Flow control", "Advanced", "Damage procedures (2023.4+)", "Item data (2023.4+)", "World scoreboard (2023.4+)" };
                             if (open_tabs[i].type == PROCEDURE) {
                                 cols[0] = open_tabs[i].procedure->color.x;
                                 cols[1] = open_tabs[i].procedure->color.y;
@@ -4568,6 +4597,7 @@ int main() {
 
                             switch (open_tabs[i].type) {
                             case MODELEMENT:
+                            {
                                 ImGui::Spacing();
                                 ImGui::BeginChild(23, { ImGui::GetColumnWidth(), 122 }, true);
                                 ImGui::AlignTextToFramePadding();
@@ -4589,7 +4619,7 @@ int main() {
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Mod element icons: ");
                                 NextElement(180);
-                                if (rlImGuiImageButtonSize("light", (open_tabs[i].modelement->dark_icon_path.empty() || open_tabs[i].modelement->dark_icon_path == "0" ? &blank : &open_tabs[i].modelement->dark_icon), {30, 30})) {
+                                if (rlImGuiImageButtonSize("light", (open_tabs[i].modelement->dark_icon_path.empty() || open_tabs[i].modelement->dark_icon_path == "0" ? &blank : &open_tabs[i].modelement->dark_icon), { 30, 30 })) {
                                     char path[1024] = { 0 };
                                     int result = GuiFileDialog(DIALOG_OPEN_FILE, "Select dark icon", path, "*.png", "PNG image");
                                     if (result == 1) {
@@ -4637,7 +4667,7 @@ int main() {
                                                             ImGui::TableNextRow();
                                                             ImGui::TableSetColumnIndex(0);
                                                             bool f = false;
-                                                            ImGui::Selectable(open_tabs[i].modelement->widgets[page.second][{ l, 0 }].displayname.c_str(), &f, ImGuiSelectableFlags_None, {ImGui::GetColumnWidth(), 15});
+                                                            ImGui::Selectable(open_tabs[i].modelement->widgets[page.second][{ l, 0 }].displayname.c_str(), &f, ImGuiSelectableFlags_None, { ImGui::GetColumnWidth(), 15 });
                                                             if (ImGui::IsItemHovered()) {
                                                                 ImGui::BeginTooltip();
                                                                 ImGui::Text("Change column contents");
@@ -4762,7 +4792,9 @@ int main() {
                                     ImGui::EndTabBar();
                                 }
                                 break;
+                            }
                             case ANIMATION:
+                            {
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Animation name:");
@@ -4797,7 +4829,9 @@ int main() {
                                     ImGui::PopID();
                                 }
                                 break;
+                            }
                             case API:
+                            {
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("API name:");
@@ -4821,7 +4855,9 @@ int main() {
                                     ImGui::EndTabBar();
                                 }
                                 break;
+                            }
                             case TRANSLATION:
+                            {
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Translation name:");
@@ -4861,7 +4897,7 @@ int main() {
                                     ImGui::PopID();
                                 }
                                 if (ImGui::Button("Copy keys")) {
-                                    if (!translationkey_clipboard.empty() && ! open_tabs[i].translation->keys.empty())
+                                    if (!translationkey_clipboard.empty() && !open_tabs[i].translation->keys.empty())
                                         translationkey_clipboard.clear();
                                     for (int l = 0; l < open_tabs[i].translation->keys.size(); l++)
                                         translationkey_clipboard.push_back(open_tabs[i].translation->keys[l].first);
@@ -4875,7 +4911,9 @@ int main() {
                                     }
                                 }
                                 break;
+                            }
                             case DATALIST:
+                            {
                                 ImGui::Spacing();
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Datalist name: ");
@@ -4957,7 +4995,9 @@ int main() {
                                     ImGui::EndTabBar();
                                 }
                                 break;
-                            case PROCEDURE: {
+                            }
+                            case PROCEDURE: 
+                            {
                                 bool longer = open_tabs[i].procedure->requires_api;
                                 ImGui::BeginChild(23, { ImGui::GetColumnWidth(), (!longer ? 173.f : 196.f) }, true);
                                 ImGui::AlignTextToFramePadding();
@@ -5217,6 +5257,7 @@ int main() {
                                 break;
                             }
                             case GLOBALTRIGGER:
+                            {
                                 if (!open_tabs[i].globaltrigger->manual_code) {
                                     ImGui::Spacing();
                                     ImGui::AlignTextToFramePadding();
@@ -5327,7 +5368,7 @@ int main() {
                                             std::string tabname = version.first + " " + version.second;
                                             if (ImGui::BeginTabItem(tabname.c_str())) {
                                                 ImGui::PushID(4);
-                                                ImGui::InputTextMultiline(" ", &open_tabs[i].globaltrigger->event_code[version], {ImGui::GetColumnWidth(), 400}, ImGuiInputTextFlags_AllowTabInput);
+                                                ImGui::InputTextMultiline(" ", &open_tabs[i].globaltrigger->event_code[version], { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
                                                 ImGui::PopID();
                                                 ImGui::EndTabItem();
                                             }
@@ -5336,18 +5377,21 @@ int main() {
                                     }
                                 }
                                 break;
+                            }
                             case CATEGORY:
+                            {
                                 ImGui::Spacing();
-                                ImGui::Text("Category name: "); 
+                                ImGui::Text("Category name: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
                                 ImGui::Text("Category color: ");
-                                ImGui::SameLine(); 
+                                ImGui::SameLine();
                                 float col[4] = { open_tabs[i].category->color.x, open_tabs[i].category->color.y, open_tabs[i].category->color.z, open_tabs[i].category->color.w };
                                 ImGui::ColorEdit4(" ", col);
                                 open_tabs[i].category->color = { col[0], col[1], col[2], col[3] };
                                 ImGui::Checkbox("Is API category", &open_tabs[i].category->isapi);
                                 break;
+                            }
                             }
 
                             ImGui::EndChild();
