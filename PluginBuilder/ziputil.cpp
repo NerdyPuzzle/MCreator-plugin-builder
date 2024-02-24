@@ -11,6 +11,37 @@
 
 #define MAX_TCHAR_BUFFER_SIZE 1024
 
+#include <wininet.h>
+#pragma comment(lib,"wininet.lib")
+
+std::string ReadWebsiteRawData(const std::string& url) {
+	HINTERNET hInternet = InternetOpenA("MyBrowser", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+	if (!hInternet) {
+		std::cerr << "Error in InternetOpen: " << GetLastError() << std::endl;
+		return "";
+	}
+
+	HINTERNET hConnect = InternetOpenUrlA(hInternet, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
+	if (!hConnect) {
+		std::cerr << "Error in InternetOpenUrl: " << GetLastError() << std::endl;
+		InternetCloseHandle(hInternet);
+		return "";
+	}
+
+	std::string raw_data;
+	char buffer[1024];
+	DWORD bytesRead = 0;
+
+	while (InternetReadFile(hConnect, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+		raw_data.append(buffer, bytesRead);
+	}
+
+	InternetCloseHandle(hConnect);
+	InternetCloseHandle(hInternet);
+
+	return raw_data;
+}
+
 std::wstring s2ws2(const std::string str) {
 	int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
 	std::wstring wstrTo(size_needed, 0);

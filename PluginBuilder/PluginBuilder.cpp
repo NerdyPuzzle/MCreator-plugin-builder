@@ -45,6 +45,7 @@ int delete_translation = -1;
 int delete_api = -1;
 int delete_animation = -1;
 int delete_modelement = -1;
+int delete_mutator = -1;
 std::vector<const char*> tempchars_procedures;
 std::vector<const char*> tempchars_globaltriggers;
 std::vector<const char*> tempchars_categories;
@@ -53,7 +54,8 @@ std::vector<const char*> tempchars_translations;
 std::vector<const char*> tempchars_apis;
 std::vector<const char*> tempchars_animations;
 std::vector<const char*> tempchars_modelements;
-bool active[8] = { false, false, false, false, false, false, false, false };
+std::vector<const char*> tempchars_mutators;
+bool active[9] = { false, false, false, false, false, false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
 int combo_item = 0;
@@ -257,7 +259,10 @@ void SavePlugin(const Plugin* plugin) {
             std::ofstream category(pluginpath + "categories/" + ct.name + ".txt");
             category << ct.name << "\n";
             category << ct.isapi << "\n";
-            category << ct.color.x << " " << ct.color.y << " " << ct.color.z << " " << ct.color.w;
+            category << ct.color.x << " " << ct.color.y << " " << ct.color.z << " " << ct.color.w << "\n";
+            category << ct.ischild << "\n";
+            category << ct.parent_int << "\n";
+            category << ct.parent_name;
             category.close();
         }
     }
@@ -408,6 +413,9 @@ void SavePlugin(const Plugin* plugin) {
                 procedure << "\n" << comp.name;
                 procedure << "\n" << comp.input_text;
             }
+            procedure << "\n" << pc.has_mutator;
+            if (pc.has_mutator)
+                procedure << "\n" << pc.mutator;
             if (!pc.code.empty()) {
                 if (!fs::exists(pluginpath + "procedures/code/"))
                     fs::create_directory(pluginpath + "procedures/code/");
@@ -642,6 +650,22 @@ void SavePlugin(const Plugin* plugin) {
     else if (fs::exists(pluginpath + "overrides/"))
         fs::remove_all(pluginpath + "overrides/");
 
+    if (!plugin->data.mutators.empty()) {
+        if (!fs::exists(pluginpath + "mutators/"))
+            fs::create_directory(pluginpath + "mutators/");
+        for (const Plugin::Mutator mt : plugin->data.mutators) {
+            std::ofstream mutator(pluginpath + "mutators/" + mt.name + ".txt");
+            mutator << mt.name << "\n";
+            mutator << mt.input_name << "\n";
+            mutator << mt.container_name << "\n";
+            mutator << mt.color.x << " " << mt.color.y << " " << mt.color.z << "\n";
+            mutator << mt.variable_int;
+            mutator.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "mutators/"))
+        fs::remove_all(pluginpath + "mutators/");
+
 }
 Plugin LoadPlugin(std::string path) {
     Plugin plugin;
@@ -675,6 +699,10 @@ Plugin LoadPlugin(std::string path) {
             category >> color.z;
             category >> color.w;
             ct.color = color;
+            category >> ct.ischild;
+            category >> ct.parent_int;
+            std::getline(category, ct.parent_name);
+            std::getline(category, ct.parent_name);
             category.close();
             plugin.data.categories.push_back(ct);
         }
@@ -888,6 +916,12 @@ Plugin LoadPlugin(std::string path) {
                     pc.components[comp_index].input_text.append(temp);
                     temp.clear();
                     pc.components[comp_index].input_hastext = true;
+                }
+                procedure >> pc.has_mutator;
+                if (pc.has_mutator) {
+                    std::getline(procedure, pc.mutator);
+                    if (pc.mutator.empty())
+                        std::getline(procedure, pc.mutator);
                 }
                 if (fs::exists(path + "procedures/code/")) {
                     for (const std::pair<std::string, std::string> version : pc.versions) {
@@ -1234,6 +1268,25 @@ Plugin LoadPlugin(std::string path) {
         }
     }
 
+    if (fs::exists(path + "mutators/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "mutators/")) { // load blockly mutators
+            std::ifstream mutator(entry.string());
+            Plugin::Mutator mt;
+            std::getline(mutator, mt.name);
+            std::getline(mutator, mt.input_name);
+            std::getline(mutator, mt.container_name);
+            ImVec4 color;
+            mutator >> color.x;
+            mutator >> color.y;
+            mutator >> color.z;
+            color.w = 1;
+            mt.color = color;
+            mutator >> mt.variable_int;
+            mutator.close();
+            plugin.data.mutators.push_back(mt);
+        }
+    }
+
     return plugin;
 }
 void LoadAllPlugins() {
@@ -1301,6 +1354,7 @@ void ExportPlugin(const Plugin plugin) {
         pjson << "  \"id\": \"" + RegistryName(plugin.data.id) + "\",\n";
         pjson << "  \"weight\": 30,\n";
         pjson << "  \"minversion\": 0,\n";
+        pjson << "  " + ReadWebsiteRawData("") + ",\n";
         if (!plugin.data.modelements.empty())
             pjson << "  \"javaplugin\": \"javacode." + ClearSpace(loaded_plugin.data.name) + "Launcher\",\n";
         pjson << "  \"info\": {\n";
@@ -1321,7 +1375,40 @@ void ExportPlugin(const Plugin plugin) {
                     std::ofstream ct_("temp_data\\" + RegistryName(ct.name) + ".json");
                     ct_ << "{\n";
                     ct_ << "  \"color\": \"" + ImVecToHex(ct.color) + "\",\n";
-                    ct_ << "  \"api\": " + (std::string)(ct.isapi ? "true\n" : "false\n");
+                    ct_ << "  \"api\": " + (std::string)(ct.isapi ? "true" : "false") + (std::string)(ct.ischild ? ",\n" : "\n");
+                    if (ct.ischild) {
+                        ct_ << "  \"parent_category\": \"";
+                        std::string parent_id = "";
+                        if (ct.parent_name == "Block procedures")
+                            parent_id = "blockprocedures";
+                        else if (ct.parent_name == "Command parameters")
+                            parent_id = "commands";
+                        else if (ct.parent_name == "Damage procedures")
+                            parent_id = "damagesources";
+                        else if (ct.parent_name == "Direction procedures")
+                            parent_id = "directionactions";
+                        else if (ct.parent_name == "Entity procedures")
+                            parent_id = "entityprocedures";
+                        else if (ct.parent_name == "Item procedures")
+                            parent_id = "itemprocedures";
+                        else if (ct.parent_name == "Player procedures")
+                            parent_id = "playerprocedures";
+                        else if (ct.parent_name == "Projectile procedures")
+                            parent_id = "projectilemanagement";
+                        else if (ct.parent_name == "Slot & GUI procedures")
+                            parent_id = "guimanagement";
+                        else if (ct.parent_name == "World procedures")
+                            parent_id = "worldprocedures";
+                        else if (ct.parent_name == "Minecraft components")
+                            parent_id = "mcelements";
+                        else if (ct.parent_name == "Flow control")
+                            parent_id = "logicloops";
+                        else if (ct.parent_name == "Advanced")
+                            parent_id = "advanced";
+                        else
+                            parent_id = RegistryName(ct.parent_name);
+                        ct_ << parent_id + "\"\n";
+                    }
                     ct_ << "}";
                     ct_.close();
                     zip.AddFile("temp_data\\" + RegistryName(ct.name) + ".json", "procedures\\$" + RegistryName(ct.name) + ".json");
@@ -1401,6 +1488,8 @@ void ExportPlugin(const Plugin plugin) {
                     }
                     pc_ << "  ],\n";
                     pc_ << "  \"inputsInline\": true,\n";
+                    if (pc.has_mutator)
+                        pc_ << "  \"mutator\": \"" + RegistryName(pc.mutator) + "_mutator\",\n";
                     if (pc.type == 0) { // output
                         pc_ << "  \"previousStatement\": null,\n";
                         pc_ << "  \"nextStatement\": null,\n";
@@ -1421,7 +1510,7 @@ void ExportPlugin(const Plugin plugin) {
                     pc_ << "  \"colour\": \"" + ImVecToHex(pc.color) + "\",\n";
                     pc_ << "  \"mcreator\": {\n";
                     pc_ << "    \"toolbox_id\": \"";
-                    if (pc.category <= 16) {
+                    if (pc.category <= 20) {
                         if (pc.category_name == "Block data")
                             pc_ << "blockdata";
                         else if (pc.category_name == "Block management") // legacy support to not break plugins
@@ -1477,11 +1566,18 @@ void ExportPlugin(const Plugin plugin) {
                         pc_ << RegistryName(pc.category_name);
                     pc_ << "\",\n";
                     pc_ << "    \"toolbox_init\": [\n";
+                    if (pc.has_mutator) {
+                        pc_ << "      \"<mutation inputs=\\\"1\\\"></mutation>\"";
+                    }
                     i = 0;
                     int inputs_size = 0;
                     for (const Plugin::Component comp : pc.components)
                         if (comp.type_int == 0)
                             inputs_size++;
+                    if (inputs_size != 0 && pc.has_mutator)
+                        pc_ << ",\n";
+                    else if (inputs_size == 0 && pc.has_mutator)
+                        pc_ << "\n";
                     for (const Plugin::Component comp : pc.components) {
                         if (comp.type_int == 0) {
                             i++;
@@ -1514,7 +1610,7 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << (std::string)(i == inputs_size ? "\n" : ",\n");
                         }
                     }
-                    pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency || pc.requires_api ? ",\n" : "\n");
+                    pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                     if (!pc.components.empty()) {
                         i = 0;
                         std::vector<std::string> inputs;
@@ -1547,7 +1643,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency || pc.requires_api ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!fields.empty()) {
@@ -1556,7 +1652,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == fields.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency || pc.requires_api ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!statements.empty()) {
@@ -1568,7 +1664,7 @@ void ExportPlugin(const Plugin plugin) {
                                 pc_ << "        \"disable_local_variables\": " + (std::string)(disable_locals[i - 1] ? "true\n" : "false\n");
                                 pc_ << "      }\n";
                             }
-                            pc_ << "    ]" + (std::string)(pc.world_dependency || pc.requires_api ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                             i = 0;
                         }
                     }
@@ -1578,11 +1674,16 @@ void ExportPlugin(const Plugin plugin) {
                         pc_ << "        \"name\": \"world\",\n";
                         pc_ << "        \"type\": \"world\"\n";
                         pc_ << "      }\n";
-                        pc_ << "    ]" + (std::string)(pc.requires_api ? ",\n" : "\n");
+                        pc_ << "    ]" + (std::string)(pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                     }
                     if (pc.requires_api) {
                         pc_ << "    \"required_apis\": [\n";
                         pc_ << "      \"" + RegistryName(pc.api_name) + "\"\n";
+                        pc_ << "    ]" + (std::string)(pc.has_mutator ? ",\n" : "\n");
+                    }
+                    if (pc.has_mutator) {
+                        pc_ << "    \"repeating_inputs\": [\n";
+                        pc_ << "      \"entry\"\n";
                         pc_ << "    ]\n";
                     }
                     pc_ << "  }\n";
@@ -1592,6 +1693,67 @@ void ExportPlugin(const Plugin plugin) {
                     lang << "blockly.block." + RegistryName(pc.name) + "=" + pc.translationkey + "\n";
                 }
             }
+        }
+        if (!plugin.data.mutators.empty()) {
+            zip.AddFolder("blockly/js");
+            std::ofstream mt_("temp_data\\mutators.txt");
+            std::string simpleRepeatingInputMixin = "(function simpleRepeatingInputMixin" + ClearSpace(plugin.data.name) + "(mutatorContainer, mutatorInput, inputName, inputProvider, isProperInput = true, fieldNames = [], disableIfEmpty) { return { mutationToDom: function () { var container = document.createElement('mutation'); container.setAttribute('inputs', this.inputCount_); return container; }, domToMutation: function (xmlElement) { this.inputCount_ = parseInt(xmlElement.getAttribute('inputs'), 10); this.updateShape_(); }, saveExtraState: function () { return { 'inputCount': this.inputCount_ }; }, loadExtraState: function (state) { this.inputCount_ = state['inputCount']; this.updateShape_(); }, decompose: function (workspace) { const containerBlock = workspace.newBlock(mutatorContainer); containerBlock.initSvg(); var connection = containerBlock.getInput('STACK').connection; for (let i = 0; i < this.inputCount_; i++) { const inputBlock = workspace.newBlock(mutatorInput); inputBlock.initSvg(); connection.connect(inputBlock.previousConnection); connection = inputBlock.nextConnection; } return containerBlock; }, compose: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); const connections = []; const fieldValues = []; while (inputBlock && !inputBlock.isInsertionMarker()) { connections.push(inputBlock.valueConnection_); fieldValues.push(inputBlock.fieldValues_); inputBlock = inputBlock.nextConnection && inputBlock.nextConnection.targetBlock(); } if (isProperInput) { for (let i = 0; i < this.inputCount_; i++) { const connection = this.getInput(inputName + i) && this.getInput(inputName + i).connection.targetConnection; if (connection && connections.indexOf(connection) == -1) { connection.disconnect(); } } } this.inputCount_ = connections.length; this.updateShape_(); for (let i = 0; i < this.inputCount_; i++) { if (isProperInput) { Blockly.Mutator.reconnect(connections[i], this, inputName + i); } if (fieldValues[i]) { for (let j = 0; j < fieldNames.length; j++) { if (fieldValues[i][j] != null) this.getField(fieldNames[j] + i).setValue(fieldValues[i][j]); } } } }, saveConnections: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); let i = 0; while (inputBlock) { if (!inputBlock.isInsertionMarker()) { const input = this.getInput(inputName + i); if (input) { if (isProperInput) { inputBlock.valueConnection_ = input.connection.targetConnection; } inputBlock.fieldValues_ = []; for (let j = 0; j < fieldNames.length; j++) { const currentFieldName = fieldNames[j] + i; inputBlock.fieldValues_[j] = this.getFieldValue(currentFieldName); } } i++; } inputBlock = inputBlock.getNextBlock(); } }, updateShape_: function () { this.handleEmptyInput_(disableIfEmpty); for (let i = 0; i < this.inputCount_; i++) { if (!this.getInput(inputName + i)) inputProvider(this, inputName, i); } for (let i = this.inputCount_; this.getInput(inputName + i); i++) { this.removeInput(inputName + i); } }, handleEmptyInput_: function (disableIfEmpty) { if (disableIfEmpty === undefined) { if (this.inputCount_ && this.getInput('EMPTY')) { this.removeInput('EMPTY'); } else if (!this.inputCount_ && !this.getInput('EMPTY')) { this.appendDummyInput('EMPTY').appendField(javabridge.t('blockly.block.' + this.type + '.empty')); } } else if (disableIfEmpty) { this.setWarningText(this.inputCount_ ? null : javabridge.t('blockly.block.' + this.type + '.empty')); this.setEnabled(this.inputCount_); } } } })";
+            mt_ << simpleRepeatingInputMixin;
+            for (const Plugin::Mutator mt : plugin.data.mutators) {
+                mt_ << "\n\nBlockly.Blocks['" + RegistryName(mt.name) + "_mutator_container'] = {\n";
+                mt_ << "    init: function() {\n";
+                mt_ << "        this.appendDummyInput().appendField(javabridge.t('blockly.block." + RegistryName(mt.name) + "_mutator.container'));\n";
+                mt_ << "        this.appendStatementInput('STACK');\n";
+                mt_ << "        this.contextMenu = false;\n";
+                mt_ << "        this.setColour('" + ImVecToHex(mt.color) + "');\n";
+                mt_ << "    }\n";
+                mt_ << "};\n\n";
+                mt_ << "Blockly.Blocks['" + RegistryName(mt.name) + "_mutator_input'] = {\n";
+                mt_ << "    init: function() {\n";
+                mt_ << "        this.appendDummyInput().appendField(javabridge.t('blockly.block." + RegistryName(mt.name) + "_mutator.input'));\n";
+                mt_ << "        this.setPreviousStatement(true);\n";
+                mt_ << "        this.setNextStatement(true);\n";
+                mt_ << "        this.contextMenu = false;\n";
+                mt_ << "        this.fieldValues_ = [];\n";
+                mt_ << "        this.setColour('" + ImVecToHex(mt.color) + "');\n";
+                mt_ << "    }\n";
+                mt_ << "};\n\n";
+                mt_ << "Blockly.Extensions.registerMutator('" + RegistryName(mt.name) + "_mutator', simpleRepeatingInputMixin" + ClearSpace(plugin.data.name) + "(\n";
+                mt_ << "        '" + RegistryName(mt.name) + "_mutator_container', '" + RegistryName(mt.name) + "_mutator_input', 'entry',\n";
+                mt_ << "        function(thisBlock, inputName, index) {\n";
+                mt_ << "            thisBlock.appendValueInput(inputName + index).setCheck('";
+                std::string vartype = "";
+                switch (mt.variable_int) {
+                case 0:
+                    vartype = "MCItemBlock";
+                    break;
+                case 1:
+                    vartype = "Direction";
+                    break;
+                case 2:
+                    vartype = "Entity";
+                    break;
+                case 3:
+                    vartype = "MCItem";
+                    break;
+                case 4:
+                    vartype = "Boolean";
+                    break;
+                case 5:
+                    vartype = "Number";
+                    break;
+                case 6:
+                    vartype = "String";
+                    break;
+                }
+                mt_ << vartype + "').setAlign(Blockly.Input.Align.RIGHT)\n";
+                mt_ << "        }),\n";
+                mt_ << "    undefined, ['" + RegistryName(mt.name) + "_mutator_input']);";
+                lang << "blockly.block." + RegistryName(mt.name) + "_mutator.input=" + mt.input_name + "\n";
+                lang << "blockly.block." + RegistryName(mt.name) + "_mutator.container=" + mt.container_name + "\n";
+            }
+            mt_.close();
+            zip.AddFile("temp_data\\mutators.txt", "blockly\\js\\" + plugin.data.id + "_mutators.js");
         }
         if (!plugin.data.globaltriggers.empty()) {
             zip.AddFolder("triggers");
@@ -2550,7 +2712,7 @@ void ExportPlugin(const Plugin plugin) {
 
 // tab windows stuff
 enum WindowType {
-    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION, API, ANIMATION, MODELEMENT
+    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION, API, ANIMATION, MODELEMENT, MUTATOR
 };
 struct TabWindow {
     WindowType type;
@@ -2563,6 +2725,7 @@ struct TabWindow {
     Plugin::Api* api;
     Plugin::Animation* animation;
     Plugin::ModElement* modelement;
+    Plugin::Mutator* mutator;
 };
 std::vector<TabWindow> open_tabs;
 std::vector<std::string> open_tab_names;
@@ -3117,7 +3280,7 @@ int main() {
             if (deletefile) {
                 ImGui::OpenPopup("Delete file");
                 if (deletefile_set_pos) {
-                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 325) / 2 });
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 365) / 2 });
                     for (int j = 0; j < loaded_plugin.data.procedures.size(); j++) {
                         tempchars_procedures.push_back(loaded_plugin.data.procedures[j].name.c_str());
                     }
@@ -3142,9 +3305,12 @@ int main() {
                     for (int j = 0; j < loaded_plugin.data.modelements.size(); j++) {
                         tempchars_modelements.push_back(loaded_plugin.data.modelements[j].name.c_str());
                     }
+                    for (int j = 0; j < loaded_plugin.data.mutators.size(); j++) {
+                        tempchars_mutators.push_back(loaded_plugin.data.mutators[j].name.c_str());
+                    }
                 }
                 deletefile_set_pos = false;
-                ImGui::SetNextWindowSize({ 300, 325 });
+                ImGui::SetNextWindowSize({ 300, 365 });
                 if (ImGui::BeginPopupModal("Delete file", &deletefile, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                     if (delete_procedure != -1 && !active[0]) {
                         delete_globaltrigger = -1;
@@ -3154,6 +3320,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[0] = true;
                         active[1] = false;
                         active[2] = false;
@@ -3162,6 +3329,7 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_globaltrigger != -1 && !active[1]) {
                         delete_procedure = -1;
@@ -3171,6 +3339,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[1] = true;
                         active[0] = false;
                         active[2] = false;
@@ -3179,6 +3348,7 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_category != -1 && !active[2]) {
                         delete_procedure = -1;
@@ -3188,6 +3358,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[2] = true;
                         active[1] = false;
                         active[0] = false;
@@ -3196,6 +3367,7 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_datalist != -1 && !active[3]) {
                         delete_procedure = -1;
@@ -3205,6 +3377,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[3] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3213,6 +3386,7 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_api != -1 && !active[4]) {
                         delete_procedure = -1;
@@ -3222,6 +3396,7 @@ int main() {
                         delete_datalist = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[5] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3230,6 +3405,7 @@ int main() {
                         active[3] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_animation != -1 && !active[5]) {
                         delete_procedure = -1;
@@ -3239,6 +3415,7 @@ int main() {
                         delete_datalist = -1;
                         delete_api = -1;
                         delete_modelement = -1;
+                        delete_mutator = -1;
                         active[6] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3247,6 +3424,7 @@ int main() {
                         active[3] = false;
                         active[5] = false;
                         active[7] = false;
+                        active[8] = false;
                     }
                     else if (delete_modelement != -1 && !active[6]) {
                         delete_procedure = -1;
@@ -3256,6 +3434,7 @@ int main() {
                         delete_datalist = -1;
                         delete_api = -1;
                         delete_animation = -1;
+                        delete_mutator = -1;
                         active[7] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3264,6 +3443,26 @@ int main() {
                         active[3] = false;
                         active[5] = false;
                         active[6] = false;
+                        active[8] = false;
+                    }
+                    else if (delete_mutator != -1 && !active[7]) {
+                        delete_procedure = -1;
+                        delete_globaltrigger = -1;
+                        delete_category = -1;
+                        delete_translation = -1;
+                        delete_datalist = -1;
+                        delete_api = -1;
+                        delete_animation = -1;
+                        delete_modelement = -1;
+                        active[8] = true;
+                        active[2] = false;
+                        active[1] = false;
+                        active[0] = false;
+                        active[4] = false;
+                        active[3] = false;
+                        active[5] = false;
+                        active[6] = false;
+                        active[7] = false;
                     }
 
                     ImGui::Text("Procedures");
@@ -3290,6 +3489,9 @@ int main() {
                     ImGui::Text("Mod Elements");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::ListBox("modelements", &delete_modelement, tempchars_modelements.data(), loaded_plugin.data.modelements.size());
+                    ImGui::Text("Mutators");
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::ListBox("mutators", &delete_mutator, tempchars_mutators.data(), loaded_plugin.data.mutators.size());
 
                     if (delete_procedure != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name)]) != open_tab_names.end())
@@ -3335,6 +3537,12 @@ int main() {
                     }
                     else if (delete_modelement != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.modelements[delete_modelement].name)]) != open_tab_names.end())
+                            file_open = true;
+                        else
+                            file_open = false;
+                    }
+                    else if (delete_mutator != -1) {
+                        if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.mutators[delete_mutator].name)]) != open_tab_names.end())
                             file_open = true;
                         else
                             file_open = false;
@@ -3400,7 +3608,13 @@ int main() {
                             loaded_plugin.data.animations.erase(loaded_plugin.data.animations.begin() + delete_animation);
                             tempchars_animations.erase(tempchars_animations.begin() + delete_animation);
                         }
-                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1 || delete_api != -1 || delete_animation != -1 || delete_modelement != -1) && !file_open) {
+                        else if (delete_mutator != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/mutators/" + loaded_plugin.data.mutators[delete_mutator].name + ".txt");
+                            loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.mutators[delete_mutator].name));
+                            loaded_plugin.data.mutators.erase(loaded_plugin.data.mutators.begin() + delete_mutator);
+                            tempchars_mutators.erase(tempchars_mutators.begin() + delete_mutator);
+                        }
+                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1 || delete_api != -1 || delete_animation != -1 || delete_modelement != -1 || delete_mutator != -1) && !file_open) {
                             SavePlugin(&loaded_plugin);
                             deletefile = false;
                         }
@@ -3424,7 +3638,8 @@ int main() {
                 delete_api = -1;
                 delete_animation = -1;
                 delete_modelement = -1;
-                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false; active[5] = false; active[6] = false; active[7] = false;
+                delete_mutator = -1;
+                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false; active[5] = false; active[6] = false; active[7] = false; active[8] = false;
                 if (!tempchars_procedures.empty())
                     tempchars_procedures.clear();
                 if (!tempchars_globaltriggers.empty())
@@ -3441,6 +3656,8 @@ int main() {
                     tempchars_animations.clear();
                 if (!tempchars_modelements.empty())
                     tempchars_modelements.clear();
+                if (!tempchars_mutators.empty())
+                    tempchars_mutators.clear();
                 if (file_open)
                     file_open = false;
             }
@@ -3455,7 +3672,7 @@ int main() {
                 ImGui::SetNextWindowSize({ 300, 120 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("New file", &addfile, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation\0API\0Animation\0Mod Element");
+                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation\0API\0Animation\0Mod Element\0Mutator");
                     ImGui::Spacing();
                     ImGui::AlignTextToFramePadding();
                     ImGui::Text("Name: "); ImGui::SameLine();
@@ -3535,6 +3752,13 @@ int main() {
                                 me.name = file_name;
                                 loaded_plugin.data.modelements.push_back(me);
                                 window.modelement = &loaded_plugin.data.modelements[loaded_plugin.data.modelements.size() - 1];
+                            }
+                            else if (combo_item == 8) {
+                                window.type = MUTATOR;
+                                Plugin::Mutator mt;
+                                mt.name = file_name;
+                                loaded_plugin.data.mutators.push_back(mt);
+                                window.mutator = &loaded_plugin.data.mutators[loaded_plugin.data.mutators.size() - 1];
                             }
                             loaded_plugin.data.filenames.push_back(file_name);
                             open_tabs.push_back(window);
@@ -4537,6 +4761,23 @@ int main() {
                                 }
                             }
                         }
+                        if (ImGui::CollapsingHeader("Mutators")) {
+                            if (!loaded_plugin.data.mutators.empty()) {
+                                for (Plugin::Mutator& mt : loaded_plugin.data.mutators) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(mt.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), mt.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = MUTATOR;
+                                            window.mutator = &mt;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(mt.name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         ImGui::EndTabItem();
                     }
                     if (ImGui::BeginTabItem("Overrides")) {
@@ -4998,8 +5239,15 @@ int main() {
                             }
                             case PROCEDURE: 
                             {
+                                float length = 196;
+                                if (open_tabs[i].procedure->requires_api)
+                                    length += 23;
+                                if (open_tabs[i].procedure->type == 1)
+                                    length += 23;
+                                if (open_tabs[i].procedure->has_mutator)
+                                    length += 23;
                                 bool longer = open_tabs[i].procedure->requires_api;
-                                ImGui::BeginChild(23, { ImGui::GetColumnWidth(), (!longer ? 173.f : 196.f) }, true);
+                                ImGui::BeginChild(23, { ImGui::GetColumnWidth(), length }, true);
                                 ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Procedure name:");
                                 NextElement(205);
@@ -5012,7 +5260,7 @@ int main() {
                                 if (open_tabs[i].procedure->type == 1) {
                                     ImGui::AlignTextToFramePadding();
                                     ImGui::Text("Procedure output type: ");
-                                    ImGui::SameLine();
+                                    NextElement(205);
                                     ImGui::PushID(225);
                                     if (ImGui::BeginCombo(" ", loaded_plugin.ComponentValues[open_tabs[i].procedure->type_index].c_str())) {
                                         for (int k = 0; k < 7; k++) {
@@ -5034,7 +5282,7 @@ int main() {
                                 ImGui::Text("Procedure category: ");
                                 NextElement(205);
                                 ImGui::PushID(2);
-                                if (open_tabs[i].procedure->category > 16) {
+                                if (open_tabs[i].procedure->category > 20) {
                                     if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].procedure->category_name) == loaded_plugin.data.filenames.end()) {
                                         open_tabs[i].procedure->category = 0;
                                         open_tabs[i].procedure->category_name = categories[0];
@@ -5061,11 +5309,22 @@ int main() {
                                 ImGui::Checkbox("Requires an external API", &open_tabs[i].procedure->requires_api);
                                 ImGui::PopID();
                                 if (open_tabs[i].procedure->requires_api) {
-                                    ImGui::PushID(2838);
                                     ImGui::AlignTextToFramePadding();
                                     ImGui::Text("API name:");
                                     NextElement(205);
+                                    ImGui::PushID(2838);
                                     ImGui::InputText(" ", &open_tabs[i].procedure->api_name);
+                                    ImGui::PopID();
+                                }
+                                ImGui::PushID(2395);
+                                ImGui::Checkbox("Uses a mutator", &open_tabs[i].procedure->has_mutator);
+                                ImGui::PopID();
+                                if (open_tabs[i].procedure->has_mutator) {
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Mutator name:");
+                                    NextElement(205);
+                                    ImGui::PushID(2839);
+                                    ImGui::InputText(" ", &open_tabs[i].procedure->mutator);
                                     ImGui::PopID();
                                 }
                                 ImGui::EndChild();
@@ -5381,16 +5640,81 @@ int main() {
                             case CATEGORY:
                             {
                                 ImGui::Spacing();
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Category name: ");
                                 ImGui::SameLine();
                                 ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                ImGui::AlignTextToFramePadding();
                                 ImGui::Text("Category color: ");
                                 ImGui::SameLine();
                                 float col[4] = { open_tabs[i].category->color.x, open_tabs[i].category->color.y, open_tabs[i].category->color.z, open_tabs[i].category->color.w };
                                 ImGui::ColorEdit4(" ", col);
                                 open_tabs[i].category->color = { col[0], col[1], col[2], col[3] };
                                 ImGui::Checkbox("Is API category", &open_tabs[i].category->isapi);
+                                ImGui::Checkbox("Is a subcategory (2023.4+)", &open_tabs[i].category->ischild);
+                                if (open_tabs[i].category->ischild) {
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Parent category: ");
+                                    ImGui::SameLine();
+                                    std::vector<std::string> parent_categories = { "Block procedures", "Command parameters", "Damage procedures", "Direction procedures", "Entity procedures", "Item procedures", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World procedures", "Minecraft components", "Flow control", "Advanced" };
+                                    for (const Plugin::Category ct : loaded_plugin.data.categories)
+                                        if (ct.name != open_tabs[i].category->name)
+                                            parent_categories.push_back(ct.name);
+                                    if (open_tabs[i].category->parent_int > 13) {
+                                        if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].category->parent_name) == loaded_plugin.data.filenames.end()) {
+                                            open_tabs[i].category->parent_int = 0;
+                                            open_tabs[i].category->parent_name = parent_categories[0];
+                                        }
+                                    }
+                                    ImGui::PushID(203);
+                                    if (ImGui::BeginCombo(" ", parent_categories[open_tabs[i].category->parent_int].c_str())) {
+                                        for (int j = 0; j < parent_categories.size(); j++) {
+                                            if (ImGui::Selectable(parent_categories[j].c_str(), open_tabs[i].category->parent_int == j)) {
+                                                open_tabs[i].category->parent_int = j;
+                                                open_tabs[i].category->parent_name = parent_categories[j];
+                                            }
+                                        }
+                                        ImGui::EndCombo();
+                                    }
+                                    ImGui::PopID();
+                                }
                                 break;
+                            }
+                            case MUTATOR:
+                            {
+                                ImGui::Spacing();
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Input procedure block name: ");
+                                NextElement(200);
+                                ImGui::InputText(" ", &open_tabs[i].mutator->input_name);
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Container statement name: ");
+                                NextElement(200);
+                                ImGui::PushID(2);
+                                ImGui::InputText(" ", &open_tabs[i].mutator->container_name);
+                                ImGui::PopID();
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Input and container color: ");
+                                NextElement(200);
+                                float mut_cols[] = { open_tabs[i].mutator->color.x, open_tabs[i].mutator->color.y, open_tabs[i].mutator->color.z };
+                                ImGui::PushID(3);
+                                ImGui::ColorEdit3(" ", mut_cols);
+                                ImGui::PopID();
+                                open_tabs[i].mutator->color = { mut_cols[0], mut_cols[1], mut_cols[2], 1 };
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Mutator variable type: ");
+                                NextElement(200);
+                                ImGui::PushID(4);
+                                ImGui::Combo(" ", &open_tabs[i].mutator->variable_int, "Block\0Direction\0Entity\0Item\0Boolean\0Number\0Text\0");
+                                ImGui::PopID();
+
+                                if (ImGui::Button("Copy code")) {
+                                    SetClipboardText("<#list input_list$entry as entry>\n\n</#list>");
+                                }
                             }
                             }
 

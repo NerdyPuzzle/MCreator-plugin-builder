@@ -59,7 +59,10 @@ public:
 	struct Category {
 		std::string name;
 		ImVec4 color;
-		bool isapi;
+		bool isapi = false;
+		bool ischild = false;
+		int parent_int = 0;
+		std::string parent_name = "Block procedures";
 	};
 
 	struct Procedure {
@@ -78,6 +81,8 @@ public:
 		bool world_dependency = false;
 		bool requires_api = false;
 		std::string api_name;
+		bool has_mutator = false;
+		std::string mutator;
 	};
 
 	struct GlobalTrigger {
@@ -119,6 +124,14 @@ public:
 
 	struct Animation {
 		std::vector<std::pair<int, std::string>> lines; // rotation, code
+		std::string name;
+	};
+
+	struct Mutator {
+		std::string container_name;
+		std::string input_name;
+		int variable_int = 0;
+		ImVec4 color;
 		std::string name;
 	};
 
@@ -206,6 +219,7 @@ private:
 		std::vector<Api> apis;
 		std::vector<Animation> animations;
 		std::vector<ModElement> modelements;
+		std::vector<Mutator> mutators;
 		std::vector<TemplateOverride> overrides;
 		std::vector<std::string> filenames;
 	};

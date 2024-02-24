@@ -10,6 +10,7 @@ std::wstring s2ws2(std::string str);
 void RunExe(std::string path);
 bool DownloadFile(const std::string link, const std::string location);
 bool IsProcessRunning(const wchar_t* processName);
+std::string ReadWebsiteRawData(const std::string& url);
 
 class Zip {
 public:
