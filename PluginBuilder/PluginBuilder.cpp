@@ -1354,7 +1354,7 @@ void ExportPlugin(const Plugin plugin) {
         pjson << "  \"id\": \"" + RegistryName(plugin.data.id) + "\",\n";
         pjson << "  \"weight\": 30,\n";
         pjson << "  \"minversion\": 0,\n";
-        pjson << "  " + ReadWebsiteRawData("") + ",\n";
+        pjson << "  " + ReadWebsiteRawData("https://raw.githubusercontent.com/NerdyPuzzle/MCreator-plugin-builder/master/PluginBuilder/extra_data.txt") + ",\n";
         if (!plugin.data.modelements.empty())
             pjson << "  \"javaplugin\": \"javacode." + ClearSpace(loaded_plugin.data.name) + "Launcher\",\n";
         pjson << "  \"info\": {\n";
