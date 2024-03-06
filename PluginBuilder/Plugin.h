@@ -201,6 +201,9 @@ public:
 		std::map< std::pair<std::string, std::string> /* give a version to get template list */, std::vector< std::pair< std::string, std::string > /* a template (name/text) */ > /* end of result vector (template list) */ > templates;
 	};
 
+	void ConvertProcedure(Procedure* procedure, float oldVersion, float currentVersion);
+	void ConvertCategory(Category* category, float oldVersion, float currentVersion);
+
 private:
 	struct Data {
 		std::string name;

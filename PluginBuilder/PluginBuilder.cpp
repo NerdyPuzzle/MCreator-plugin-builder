@@ -128,6 +128,13 @@ Plugin::TemplateOverride* loaded_template = nullptr;
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
 
+float ParsedVersion = 0;
+float PBVersion = 1.3;
+bool new_version = false;
+bool old_version_warning = false;
+
+std::string online_data_cache = "";
+
 // plugin properties variables
 std::string pluginname;
 std::string pluginid;
@@ -704,6 +711,10 @@ Plugin LoadPlugin(std::string path) {
             std::getline(category, ct.parent_name);
             std::getline(category, ct.parent_name);
             category.close();
+
+            if (new_version)
+                plugin.ConvertCategory(&ct, ParsedVersion, PBVersion);
+
             plugin.data.categories.push_back(ct);
         }
     }
@@ -942,6 +953,10 @@ Plugin LoadPlugin(std::string path) {
                     }
                 }
                 procedure.close();
+
+                if (new_version)
+                    plugin.ConvertProcedure(&pc, ParsedVersion, PBVersion);
+
                 plugin.data.procedures.push_back(pc);
             }
         }
@@ -1287,23 +1302,66 @@ Plugin LoadPlugin(std::string path) {
         }
     }
 
+    if (new_version || old_version_warning)
+        ParsedVersion = PBVersion;
+
+    if (new_version)
+        SavePlugin(&plugin);
+
     return plugin;
 }
 void LoadAllPlugins() {
-    if (DirectoryExists("plugins/")) {
-        for (const fs::path entry : fs::directory_iterator("plugins/")) {
-            if (fs::is_directory(entry))
-                plugins.push_back(LoadPlugin(entry.string() + "\\"));
-        }
-    }
     if (!fs::exists("settings/"))
         fs::create_directory("settings/");
+
     std::ifstream mc_path("settings/mcreator.txt");
     if (mc_path.is_open()) {
         mcreator_path_set = true;
         std::getline(mc_path, mcreator_path);
     }
     mc_path.close();
+
+    std::ifstream pb_version("settings/version.txt");
+    if (pb_version.is_open()) {
+        pb_version >> ParsedVersion;
+        pb_version.close();
+        if (PBVersion > ParsedVersion)
+            new_version = true;
+        else if (PBVersion < ParsedVersion)
+            old_version_warning = true;
+    }
+    else {
+        std::ofstream version_out("settings/version.txt");
+        version_out << PBVersion;
+        version_out.close();
+        new_version = true;
+    }
+
+    if (DirectoryExists("plugins/")) {
+        for (const fs::path entry : fs::directory_iterator("plugins/")) {
+            if (fs::is_directory(entry))
+                plugins.push_back(LoadPlugin(entry.string() + "\\"));
+        }
+    }
+
+    std::string online_data = ReadWebsiteRawData("https://raw.githubusercontent.com/NerdyPuzzle/MCreator-plugin-builder/master/PluginBuilder/extra_data.txt");
+    std::ifstream data_in("settings/online_data.txt");
+    if (!online_data.empty()) {
+        data_in.close();
+        std::ofstream data("settings/online_data.txt");
+        data << online_data;
+        online_data_cache = online_data;
+    }
+    else if (online_data.empty() && data_in.is_open()) {
+        bool first_ = true;
+        while (!data_in.eof()) {
+            std::string line = "";
+            std::getline(data_in, line);
+            online_data_cache += !first_ ? ("\n" + line) : line;
+            first_ = false;
+        }
+    }
+
     if (std::system("git --version") == 0)
         git_installed = true;
 }
@@ -1311,9 +1369,18 @@ std::string ImVecToHex(ImVec4 rgb) {
     rgb.x *= 255;
     rgb.y *= 255;
     rgb.z *= 255;
+
+    // Round the RGB values to the nearest integer
+    int r = static_cast<int>(rgb.x + 0.5);
+    int g = static_cast<int>(rgb.y + 0.5);
+    int b = static_cast<int>(rgb.z + 0.5);
+
     std::stringstream ss;
     ss << "#";
-    ss << std::hex << ((int)rgb.x << 16 | (int)rgb.y << 8 | (int)rgb.z);
+    ss << std::setfill('0') << std::hex << std::setw(2) << r;
+    ss << std::setfill('0') << std::hex << std::setw(2) << g;
+    ss << std::setfill('0') << std::hex << std::setw(2) << b;
+
     return ss.str();
 }
 std::string RegistryName(std::string str) {
@@ -1354,7 +1421,8 @@ void ExportPlugin(const Plugin plugin) {
         pjson << "  \"id\": \"" + RegistryName(plugin.data.id) + "\",\n";
         pjson << "  \"weight\": 30,\n";
         pjson << "  \"minversion\": 0,\n";
-        pjson << "  " + ReadWebsiteRawData("https://raw.githubusercontent.com/NerdyPuzzle/MCreator-plugin-builder/master/PluginBuilder/extra_data.txt") + ",\n";
+        if (!online_data_cache.empty())
+            pjson << "  " + online_data_cache + ",\n";
         if (!plugin.data.modelements.empty())
             pjson << "  \"javaplugin\": \"javacode." + ClearSpace(loaded_plugin.data.name) + "Launcher\",\n";
         pjson << "  \"info\": {\n";
@@ -1403,6 +1471,12 @@ void ExportPlugin(const Plugin plugin) {
                             parent_id = "mcelements";
                         else if (ct.parent_name == "Flow control")
                             parent_id = "logicloops";
+                        else if (ct.parent_name == "Logic")
+                            parent_id = "logicoperations";
+                        else if (ct.parent_name == "Math")
+                            parent_id = "math";
+                        else if (ct.parent_name == "Text")
+                            parent_id = "text";
                         else if (ct.parent_name == "Advanced")
                             parent_id = "advanced";
                         else
@@ -1510,7 +1584,7 @@ void ExportPlugin(const Plugin plugin) {
                     pc_ << "  \"colour\": \"" + ImVecToHex(pc.color) + "\",\n";
                     pc_ << "  \"mcreator\": {\n";
                     pc_ << "    \"toolbox_id\": \"";
-                    if (pc.category <= 20) {
+                    if (pc.category <= 22) {
                         if (pc.category_name == "Block data")
                             pc_ << "blockdata";
                         else if (pc.category_name == "Block management") // legacy support to not break plugins
@@ -1553,6 +1627,12 @@ void ExportPlugin(const Plugin plugin) {
                             pc_ << "mcelements";
                         else if (pc.category_name == "Flow control")
                             pc_ << "logicloops";
+                        else if (pc.category_name == "Logic")
+                            pc_ << "logicoperations";
+                        else if (pc.category_name == "Math")
+                            pc_ << "math";
+                        else if (pc.category_name == "Text")
+                            pc_ << "text";
                         else if (pc.category_name == "Advanced")
                             pc_ << "advanced";
                         else if (pc.category_name == "Damage procedures (2023.4+)")
@@ -1643,7 +1723,7 @@ void ExportPlugin(const Plugin plugin) {
                                 i++;
                                 pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!fields.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                            pc_ << "    ]" + (std::string)(!statements.empty() || !fields.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
                             i = 0;
                         }
                         if (!fields.empty()) {
@@ -1697,7 +1777,7 @@ void ExportPlugin(const Plugin plugin) {
         if (!plugin.data.mutators.empty()) {
             zip.AddFolder("blockly/js");
             std::ofstream mt_("temp_data\\mutators.txt");
-            std::string simpleRepeatingInputMixin = "(function simpleRepeatingInputMixin" + ClearSpace(plugin.data.name) + "(mutatorContainer, mutatorInput, inputName, inputProvider, isProperInput = true, fieldNames = [], disableIfEmpty) { return { mutationToDom: function () { var container = document.createElement('mutation'); container.setAttribute('inputs', this.inputCount_); return container; }, domToMutation: function (xmlElement) { this.inputCount_ = parseInt(xmlElement.getAttribute('inputs'), 10); this.updateShape_(); }, saveExtraState: function () { return { 'inputCount': this.inputCount_ }; }, loadExtraState: function (state) { this.inputCount_ = state['inputCount']; this.updateShape_(); }, decompose: function (workspace) { const containerBlock = workspace.newBlock(mutatorContainer); containerBlock.initSvg(); var connection = containerBlock.getInput('STACK').connection; for (let i = 0; i < this.inputCount_; i++) { const inputBlock = workspace.newBlock(mutatorInput); inputBlock.initSvg(); connection.connect(inputBlock.previousConnection); connection = inputBlock.nextConnection; } return containerBlock; }, compose: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); const connections = []; const fieldValues = []; while (inputBlock && !inputBlock.isInsertionMarker()) { connections.push(inputBlock.valueConnection_); fieldValues.push(inputBlock.fieldValues_); inputBlock = inputBlock.nextConnection && inputBlock.nextConnection.targetBlock(); } if (isProperInput) { for (let i = 0; i < this.inputCount_; i++) { const connection = this.getInput(inputName + i) && this.getInput(inputName + i).connection.targetConnection; if (connection && connections.indexOf(connection) == -1) { connection.disconnect(); } } } this.inputCount_ = connections.length; this.updateShape_(); for (let i = 0; i < this.inputCount_; i++) { if (isProperInput) { Blockly.Mutator.reconnect(connections[i], this, inputName + i); } if (fieldValues[i]) { for (let j = 0; j < fieldNames.length; j++) { if (fieldValues[i][j] != null) this.getField(fieldNames[j] + i).setValue(fieldValues[i][j]); } } } }, saveConnections: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); let i = 0; while (inputBlock) { if (!inputBlock.isInsertionMarker()) { const input = this.getInput(inputName + i); if (input) { if (isProperInput) { inputBlock.valueConnection_ = input.connection.targetConnection; } inputBlock.fieldValues_ = []; for (let j = 0; j < fieldNames.length; j++) { const currentFieldName = fieldNames[j] + i; inputBlock.fieldValues_[j] = this.getFieldValue(currentFieldName); } } i++; } inputBlock = inputBlock.getNextBlock(); } }, updateShape_: function () { this.handleEmptyInput_(disableIfEmpty); for (let i = 0; i < this.inputCount_; i++) { if (!this.getInput(inputName + i)) inputProvider(this, inputName, i); } for (let i = this.inputCount_; this.getInput(inputName + i); i++) { this.removeInput(inputName + i); } }, handleEmptyInput_: function (disableIfEmpty) { if (disableIfEmpty === undefined) { if (this.inputCount_ && this.getInput('EMPTY')) { this.removeInput('EMPTY'); } else if (!this.inputCount_ && !this.getInput('EMPTY')) { this.appendDummyInput('EMPTY').appendField(javabridge.t('blockly.block.' + this.type + '.empty')); } } else if (disableIfEmpty) { this.setWarningText(this.inputCount_ ? null : javabridge.t('blockly.block.' + this.type + '.empty')); this.setEnabled(this.inputCount_); } } } })";
+            std::string simpleRepeatingInputMixin = "function simpleRepeatingInputMixin" + ClearSpace(plugin.data.name) + "(mutatorContainer, mutatorInput, inputName, inputProvider, isProperInput = true, fieldNames = [], disableIfEmpty) { return { mutationToDom: function () { var container = document.createElement('mutation'); container.setAttribute('inputs', this.inputCount_); return container; }, domToMutation: function (xmlElement) { this.inputCount_ = parseInt(xmlElement.getAttribute('inputs'), 10); this.updateShape_(); }, saveExtraState: function () { return { 'inputCount': this.inputCount_ }; }, loadExtraState: function (state) { this.inputCount_ = state['inputCount']; this.updateShape_(); }, decompose: function (workspace) { const containerBlock = workspace.newBlock(mutatorContainer); containerBlock.initSvg(); var connection = containerBlock.getInput('STACK').connection; for (let i = 0; i < this.inputCount_; i++) { const inputBlock = workspace.newBlock(mutatorInput); inputBlock.initSvg(); connection.connect(inputBlock.previousConnection); connection = inputBlock.nextConnection; } return containerBlock; }, compose: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); const connections = []; const fieldValues = []; while (inputBlock && !inputBlock.isInsertionMarker()) { connections.push(inputBlock.valueConnection_); fieldValues.push(inputBlock.fieldValues_); inputBlock = inputBlock.nextConnection && inputBlock.nextConnection.targetBlock(); } if (isProperInput) { for (let i = 0; i < this.inputCount_; i++) { const connection = this.getInput(inputName + i) && this.getInput(inputName + i).connection.targetConnection; if (connection && connections.indexOf(connection) == -1) { connection.disconnect(); } } } this.inputCount_ = connections.length; this.updateShape_(); for (let i = 0; i < this.inputCount_; i++) { if (isProperInput) { Blockly.Mutator.reconnect(connections[i], this, inputName + i); } if (fieldValues[i]) { for (let j = 0; j < fieldNames.length; j++) { if (fieldValues[i][j] != null) this.getField(fieldNames[j] + i).setValue(fieldValues[i][j]); } } } }, saveConnections: function (containerBlock) { let inputBlock = containerBlock.getInputTargetBlock('STACK'); let i = 0; while (inputBlock) { if (!inputBlock.isInsertionMarker()) { const input = this.getInput(inputName + i); if (input) { if (isProperInput) { inputBlock.valueConnection_ = input.connection.targetConnection; } inputBlock.fieldValues_ = []; for (let j = 0; j < fieldNames.length; j++) { const currentFieldName = fieldNames[j] + i; inputBlock.fieldValues_[j] = this.getFieldValue(currentFieldName); } } i++; } inputBlock = inputBlock.getNextBlock(); } }, updateShape_: function () { this.handleEmptyInput_(disableIfEmpty); for (let i = 0; i < this.inputCount_; i++) { if (!this.getInput(inputName + i)) inputProvider(this, inputName, i); } for (let i = this.inputCount_; this.getInput(inputName + i); i++) { this.removeInput(inputName + i); } }, handleEmptyInput_: function (disableIfEmpty) { if (disableIfEmpty === undefined) { if (this.inputCount_ && this.getInput('EMPTY')) { this.removeInput('EMPTY'); } else if (!this.inputCount_ && !this.getInput('EMPTY')) { this.appendDummyInput('EMPTY').appendField(javabridge.t('blockly.block.' + this.type + '.empty')); } } else if (disableIfEmpty) { this.setWarningText(this.inputCount_ ? null : javabridge.t('blockly.block.' + this.type + '.empty')); this.setEnabled(this.inputCount_); } } } }";
             mt_ << simpleRepeatingInputMixin;
             for (const Plugin::Mutator mt : plugin.data.mutators) {
                 mt_ << "\n\nBlockly.Blocks['" + RegistryName(mt.name) + "_mutator_container'] = {\n";
@@ -2659,12 +2739,12 @@ void ExportPlugin(const Plugin plugin) {
                     basetype = "FEATURE";
                     break;
                 }
-                java_registry << "\n" << "        " + ToUpper(me.name) + " = register(new ModElementType<>(\"" + RegistryName(me.name) + "\", (Character) null, BaseType." + basetype + ", " + ClearSpace(me.name) + "GUI::new, " + ClearSpace(me.name) + ".class));";
+                java_registry << "\n" << "        " + ToUpper(me.name) + " = register(new ModElementType<>(\"" + RegistryName(me.name) + "\", (Character) null, " + ClearSpace(me.name) + "GUI::new, " + ClearSpace(me.name) + ".class));";
             }
             java_registry << "\n" << "    }";
             java_registry << "\n}";
             java_registry.close();
-            std::string cmd_ = "cd " + (std::string)GetWorkingDirectory() + "\\temp_data\\javacode && javac -source 17 -target 17 -cp " + mcreator_path + "/lib/* " + ClearSpace(plugin.data.name) + "Launcher.java " + ClearSpace(plugin.data.name) + "ElementTypes.java";
+            std::string cmd_ = "cd " + (std::string)GetWorkingDirectory() + "\\temp_data\\javacode && " + mcreator_path + "/jdk/bin/javac.exe -source 17 -target 17 -cp " + mcreator_path + "/lib/* " + ClearSpace(plugin.data.name) + "Launcher.java " + ClearSpace(plugin.data.name) + "ElementTypes.java";
             for (const std::string me : me_names)
                 cmd_.append(" " + ClearSpace(me) + ".java" + " " + ClearSpace(me) + "GUI.java");
             std::system(cmd_.c_str());
@@ -4428,6 +4508,12 @@ int main() {
                             ImGui::Text("Height: 24");
                             ImGui::EndTabItem();
                         }
+                        if (ImGui::BeginTabItem("Variables")) {
+                            ImGui::Spacing();
+                            ImGui::SeparatorText("${customBlockIndex}");
+                            ImGui::Text("A number unique for each procedure block it's used in");
+                            ImGui::EndTabItem();
+                        }
                         ImGui::EndTabBar();
                     }
                     ImGui::End();
@@ -4744,7 +4830,7 @@ int main() {
                                 }
                             }
                         }
-                        if (ImGui::CollapsingHeader("Mod Elements")) {
+                        if (ImGui::CollapsingHeader("Mod Elements (2023.4)")) {
                             if (!loaded_plugin.data.modelements.empty()) {
                                 for (Plugin::ModElement& me : loaded_plugin.data.modelements) {
                                     ImGui::Bullet();
@@ -4824,7 +4910,7 @@ int main() {
                             float cols[4]; // stupid thing wont work in a switch // UPDATE: I'm just stupid but oh well
                             int entryID = 888;
                             int mappingID = 4999;
-                            std::vector<std::string> categories = { "Block data", "Block management (2023.4+ = Block actions)", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management (2023.4+ = Entity actions)", "Item procedures (2023.4+ = Item actions)", "Player data", "Player procedures (2023.4+ = Player actions)", "Projectile procedures", "Slot & GUI procedures", "World data", "World management (2023.4+ = World actions)", "Minecraft components", "Flow control", "Advanced", "Damage procedures (2023.4+)", "Item data (2023.4+)", "World scoreboard (2023.4+)" };
+                            std::vector<std::string> categories = { "Block data", "Block management (2023.4+ = Block actions)", "Command parameters", "Direction procedures", "Energy & fluid tanks", "Entity data", "Entity management (2023.4+ = Entity actions)", "Item procedures (2023.4+ = Item actions)", "Player data", "Player procedures (2023.4+ = Player actions)", "Projectile procedures", "Slot & GUI procedures", "World data", "World management (2023.4+ = World actions)", "Minecraft components", "Flow control", "Logic", "Math", "Text", "Advanced", "Damage procedures (2023.4+)", "Item data (2023.4+)", "World scoreboard (2023.4+)" };
                             if (open_tabs[i].type == PROCEDURE) {
                                 cols[0] = open_tabs[i].procedure->color.x;
                                 cols[1] = open_tabs[i].procedure->color.y;
@@ -5282,7 +5368,7 @@ int main() {
                                 ImGui::Text("Procedure category: ");
                                 NextElement(205);
                                 ImGui::PushID(2);
-                                if (open_tabs[i].procedure->category > 20) {
+                                if (open_tabs[i].procedure->category > 22) {
                                     if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].procedure->category_name) == loaded_plugin.data.filenames.end()) {
                                         open_tabs[i].procedure->category = 0;
                                         open_tabs[i].procedure->category_name = categories[0];
@@ -5470,7 +5556,6 @@ int main() {
                                                 std::string ccode;
                                                 switch (open_tabs[i].procedure->components[j].type_int) {
                                                 case 0:
-                                                case 5:
                                                     ccode = "${input$" + open_tabs[i].procedure->components[j].name + "}";
                                                     break;
                                                 case 1:
@@ -5478,6 +5563,9 @@ int main() {
                                                 case 3:
                                                 case 4:
                                                     ccode = "${field$" + open_tabs[i].procedure->components[j].name + "}";
+                                                    break;
+                                                case 5:
+                                                    ccode = "${statement$" + open_tabs[i].procedure->components[j].name + "}";
                                                     break;
                                                 case 6:
                                                 case 7:
@@ -5656,11 +5744,11 @@ int main() {
                                     ImGui::AlignTextToFramePadding();
                                     ImGui::Text("Parent category: ");
                                     ImGui::SameLine();
-                                    std::vector<std::string> parent_categories = { "Block procedures", "Command parameters", "Damage procedures", "Direction procedures", "Entity procedures", "Item procedures", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World procedures", "Minecraft components", "Flow control", "Advanced" };
+                                    std::vector<std::string> parent_categories = { "Block procedures", "Command parameters", "Damage procedures", "Direction procedures", "Entity procedures", "Item procedures", "Player procedures", "Projectile procedures", "Slot & GUI procedures", "World procedures", "Minecraft components", "Flow control", "Logic", "Math", "Text", "Advanced" };
                                     for (const Plugin::Category ct : loaded_plugin.data.categories)
                                         if (ct.name != open_tabs[i].category->name)
                                             parent_categories.push_back(ct.name);
-                                    if (open_tabs[i].category->parent_int > 13) {
+                                    if (open_tabs[i].category->parent_int > 15) {
                                         if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].category->parent_name) == loaded_plugin.data.filenames.end()) {
                                             open_tabs[i].category->parent_int = 0;
                                             open_tabs[i].category->parent_name = parent_categories[0];
