@@ -1,0 +1,4 @@
+tool.java.ftl
+temp_generator/neoforge-1.20.4/templates\tool.java.ftl
+1.20.4
+neoforge

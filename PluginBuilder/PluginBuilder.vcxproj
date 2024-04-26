@@ -139,6 +139,7 @@
     <ClCompile Include="Plugin.cpp" />
     <ClCompile Include="PluginBuilder.cpp" />
     <ClCompile Include="rlImGui.cpp" />
+    <ClCompile Include="TextEditor.cpp" />
     <ClCompile Include="tinyfiledialogs.cpp" />
     <ClCompile Include="unzip.cpp" />
     <ClCompile Include="zip.cpp" />
@@ -162,6 +163,7 @@
     <ClInclude Include="rlImGui.h" />
     <ClInclude Include="rlImGuiColors.h" />
     <ClInclude Include="sourceentity.h" />
+    <ClInclude Include="TextEditor.h" />
     <ClInclude Include="tinyfiledialogs.h" />
     <ClInclude Include="unzip.h" />
     <ClInclude Include="xyz.h" />

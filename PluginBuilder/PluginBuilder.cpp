@@ -25,8 +25,13 @@
 #include <memory>
 #include <stdexcept>
 #include <cstdio>
+#include <nlohmann/json.hpp>
+#include <utility>
+#include "TextEditor.h"
 
 namespace fs = std::filesystem;
+
+using json = nlohmann::ordered_json;
 
 bool mainmenu = true;
 bool pluginmenu = false;
@@ -118,18 +123,23 @@ std::string code__;
 std::string dirpath__;
 bool template_editor = false;
 bool template_editor_set_pos = true;
+bool adddep = false;
+bool adddep_set_pos = true;
+std::string depname = "";
+int deptype = 0;
 
 Plugin::TemplateLists template_lists;
 std::vector<std::string> dirpaths;
 int selected_list = -1;
 std::vector<std::pair<std::string, std::string>> templates;
 Plugin::TemplateOverride* loaded_template = nullptr;
+TextEditor template_code_editor;
 
 std::vector<Plugin> plugins;
 Plugin loaded_plugin;
 
 float ParsedVersion = 0;
-float PBVersion = 1.3;
+float PBVersion = 1.5;
 bool new_version = false;
 bool old_version_warning = false;
 
@@ -141,6 +151,8 @@ std::string pluginid;
 std::string pluginversion;
 std::string pluginauthor;
 std::string plugindescription;
+
+TextEditor procedure_editor;
 
 std::string GetGenerator(int type) {
     switch (type) {
@@ -211,9 +223,24 @@ std::string exec(const char* cmd) {
     }
     return result;
 }
-bool HasDependencies(const bool dependencies[12]) {
-    for (int i = 0; i < 12; i++)
-        if (dependencies[i])
+std::vector<std::string> splitString(const std::string& str, char delimiter) {
+    std::vector<std::string> substrings;
+    std::size_t start = 0;
+    std::size_t end = str.find(delimiter);
+
+    while (end != std::string::npos) {
+        substrings.push_back(str.substr(start, end - start));
+        start = end + 1;
+        end = str.find(delimiter, start);
+    }
+
+    substrings.push_back(str.substr(start));
+
+    return substrings;
+}
+bool HasDependencies(std::vector<std::pair<std::string, bool>> dependencies) {
+    for (int i = 0; i < dependencies.size(); i++)
+        if (dependencies[i].second)
             return true;
     return false;
 }
@@ -279,14 +306,18 @@ void SavePlugin(const Plugin* plugin) {
     if (!plugin->data.globaltriggers.empty()) {
         if (!fs::exists(pluginpath + "triggers/"))
             fs::create_directory(pluginpath + "triggers/");
-        for (const Plugin::GlobalTrigger gt: plugin->data.globaltriggers)
+        for (const Plugin::GlobalTrigger gt : plugin->data.globaltriggers) {
+            if (fs::exists(pluginpath + "triggers/" + gt.name + ".txt"))
+                fs::remove(pluginpath + "triggers/" + gt.name + ".txt");
             if (gt.manual_code) {
-                if (fs::exists(pluginpath + "triggers/" + gt.name + ".txt"))
-                    fs::remove(pluginpath + "triggers/" + gt.name + ".txt");
+                if (fs::exists(pluginpath + "triggers/" + gt.name + ".json"))
+                    fs::remove(pluginpath + "triggers/" + gt.name + ".json");
                 manual_triggers.push_back(gt);
             }
+        }
         for (const Plugin::GlobalTrigger gt : plugin->data.globaltriggers) {
             if (!gt.manual_code) {
+                json trigger;
                 if (fs::exists(pluginpath + "manual_triggers/"))
                     if (fs::exists(pluginpath + "manual_triggers/" + gt.name + ".txt")) {
                         fs::remove(pluginpath + "manual_triggers/" + gt.name + ".txt");
@@ -296,24 +327,39 @@ void SavePlugin(const Plugin* plugin) {
                                 fs::remove(pluginpath + "manual_triggers/code/" + gt.name + version.first + version.second + ".txt");
                         }
                     }
-                std::ofstream trigger(pluginpath + "triggers/" + gt.name + ".txt");
-                trigger << gt.name << "\n";
-                trigger << gt.cancelable << "\n";
-                trigger << gt.side;
-                for (int i = 0; i < 12; i++)
-                    trigger << "\n" << gt.dependencies[i];
-                for (const std::pair<std::string, std::string> version : gt.versions)
-                    trigger << "\n" << "[VERSION] " << version.first << " " << version.second;
-                trigger << "\n[VERSION_END]";
-                for (const std::pair<std::string, std::string> version : gt.versions) {
-                    trigger << "\n" + gt.event_code.at(version);
-                    for (int i = 0; i < 12; i++) {
-                        if (gt.dependencies[i]) {
-                            trigger << "\n" + gt.dependency_mappings.at(version).at(plugin->Dependencies[i]);
+                trigger["name"] = gt.name;
+                trigger["cancelable"] = gt.cancelable;
+                trigger["side"] = gt.side;
+
+                std::vector<std::string> dependencies;
+                for (int i = 0; i < gt.provided_dependencies.size(); i++)
+                    if (gt.provided_dependencies[i].second)
+                        dependencies.push_back(gt.provided_dependencies[i].first);
+
+                if (!dependencies.empty())
+                    trigger["provided_dependencies"] = dependencies;
+
+                if (!gt.custom_depependency_types.empty())
+                    trigger["custom_dependency_types"] = gt.custom_depependency_types;
+
+                json versions;
+                for (const std::pair<std::string, std::string> ver : gt.versions) {
+                    json version;
+                    version["event"] = gt.event_code.at(ver);
+                    for (int i = 0; i < gt.provided_dependencies.size(); i++) {
+                        if (gt.provided_dependencies[i].second) {
+                            version[gt.provided_dependencies[i].first] = gt.dependency_mappings.at(ver).at(gt.provided_dependencies[i].first);
                         }
                     }
+                    versions[ver.first + '_' + ver.second] = version;
                 }
-                trigger.close();
+
+                if (!versions.empty())
+                    trigger["versions"] = versions;
+
+                std::ofstream trigger_out(pluginpath + "triggers/" + gt.name + ".json");
+                trigger_out << trigger.dump(2);
+                trigger_out.close();
             }
         }
     }
@@ -347,82 +393,74 @@ void SavePlugin(const Plugin* plugin) {
     if (!plugin->data.procedures.empty()) {
         if (!fs::exists(pluginpath + "procedures/"))
             fs::create_directory(pluginpath + "procedures/");
+        for (const Plugin::Procedure pc : plugin->data.procedures)
+            if (fs::exists(pluginpath + "procedures/" + pc.name + ".txt"))
+                fs::remove(pluginpath + "procedures/" + pc.name + ".txt");
         for (const Plugin::Procedure pc : plugin->data.procedures) {
-            std::ofstream procedure(pluginpath + "procedures/" + pc.name + ".txt");
-            std::vector<Plugin::Component> fields_withtext;
-            procedure << pc.name << "\n";
-            procedure << pc.type << "\n";
-            procedure << pc.color.x << " " << pc.color.y << " " << pc.color.z << " " << pc.color.w << "\n";
-            procedure << pc.category_name << " [END]" << "\n";
-            procedure << pc.category << "\n";
-            procedure << pc.translationkey << "\n";
-            procedure << pc.type_index << "\n";
-            procedure << pc.components.size() << "\n";
-            bool first = true;
-            for (int i = 0; i < pc.components.size(); i++) {
-                procedure << (first ? "" : " ") << pc.components[i].type_int;
-                first = false;
-            }
+            json procedure;
+
+            procedure["name"] = pc.name;
+            procedure["type"] = pc.type;
+            procedure["color"] = { pc.color.x, pc.color.y, pc.color.z, pc.color.w };
+            procedure["category"] = pc.category_name;
+            procedure["category_index"] = pc.category;
+            procedure["translation_key"] = pc.translationkey;
+            procedure["world_dependency"] = pc.world_dependency;
+
+            if (pc.type == 1) procedure["type_index"] = pc.type_index;
+            if (pc.requires_api) procedure["required_api"] = pc.api_name;
+            if (pc.has_mutator) procedure["mutator"] = pc.mutator;
+
+            std::vector<std::string> versions;
+            for (const std::pair<std::string, std::string> version : pc.versions)
+                versions.push_back(version.first + "_" + version.second);
+            if (!versions.empty())
+                procedure["versions"] = versions;
+
+            json components;
             for (const Plugin::Component comp : pc.components) {
-                procedure << "\n" << comp.name;
+                json component;
+                component["type"] = comp.type_int;
                 switch (comp.type_int) {
                 case 0:
-                    procedure << "\n" << comp.component_value;
-                    procedure << "\n" << comp.value_int;
+                    component["variable_type"] = comp.component_value;
+                    component["variable_index"] = comp.value_int;
                     if (comp.value_int == 4)
-                        procedure << "\n" << comp.boolean_checked;
+                        component["default_value"] = comp.boolean_checked;
                     else if (comp.value_int == 5)
-                        procedure << "\n" << comp.number_default;
+                        component["default_value"] = comp.number_default;
                     else if (comp.value_int == 6)
-                        procedure << "\n" << comp.text_default;
+                        component["default_value"] = comp.text_default;
                     break;
                 case 1:
                     if (comp.input_hastext)
-                        fields_withtext.push_back(comp);
-                    break;
-                case 6:
+                        component["field_content"] = comp.input_text;
                     break;
                 case 2:
-                    procedure << "\n" << comp.checkbox_checked;
+                    component["checked"] = comp.checkbox_checked;
                     break;
                 case 3:
-                    procedure << "\n" << comp.dropdown_options.size();
-                    for (const std::string s : comp.dropdown_options)
-                        procedure << "\n" << s;
+                    component["dropdown_options"] = comp.dropdown_options;
                     break;
                 case 4:
-                    procedure << "\n" << comp.datalist;
-                    procedure << "\n" << comp.entry_provider;
+                    component["datalist"] = comp.datalist;
                     if (comp.entry_provider)
-                        procedure << "\n" << comp.provider_name;
+                        component["entry_provider"] = comp.provider_name;
                     break;
                 case 5:
-                    procedure << "\n" << comp.disable_localvars;
+                    component["disable_local_variables"] = comp.disable_localvars;
                     break;
                 case 7:
-                    procedure << "\n" << comp.source;
-                    procedure << "\n" << comp.width;
-                    procedure << "\n" << comp.height;
+                    component["source"] = comp.source;
+                    component["width"] = comp.width;
+                    component["height"] = comp.height;
                     break;
                 }
+                components[comp.name] = component;
             }
-            bool first__ = true;
-            for (const std::pair<std::string, std::string> version : pc.versions) {
-                procedure << (!first ? "\n" : "") << "[VERSION] " << version.first << " " << version.second;
-                first = false;
-            }
-            procedure << "\n" << pc.world_dependency;
-            procedure << "\n" << pc.requires_api;
-            if (pc.requires_api)
-                procedure << "\n" << pc.api_name;
-            procedure << "\n" << fields_withtext.size();
-            for (const Plugin::Component comp : fields_withtext) {
-                procedure << "\n" << comp.name;
-                procedure << "\n" << comp.input_text;
-            }
-            procedure << "\n" << pc.has_mutator;
-            if (pc.has_mutator)
-                procedure << "\n" << pc.mutator;
+            if (!pc.components.empty())
+                procedure["components"] = components;
+
             if (!pc.code.empty()) {
                 if (!fs::exists(pluginpath + "procedures/code/"))
                     fs::create_directory(pluginpath + "procedures/code/");
@@ -433,7 +471,10 @@ void SavePlugin(const Plugin* plugin) {
                     code_out.close();
                 }
             }
-            procedure.close();
+
+            std::ofstream procedure_out(pluginpath + "procedures/" + pc.name + ".json");
+            procedure_out << procedure.dump(2);
+            procedure_out.close();
         }
     }
     else if (fs::exists(pluginpath + "procedures/"))
@@ -721,36 +762,104 @@ Plugin LoadPlugin(std::string path) {
 
     if (fs::exists(path + "triggers/")) {
         for (const fs::path entry : fs::directory_iterator(path + "triggers/")) { // load global triggers
-            std::ifstream trigger(entry.string());
-            Plugin::GlobalTrigger gt;
-            std::getline(trigger, gt.name);
-            trigger >> gt.cancelable;
-            trigger >> gt.side;
-            for (int i = 0; i < 12; i++)
-                trigger >> gt.dependencies[i];
-            std::string line;
-            std::string temp;
-            while (std::getline(trigger, line) && line.find("[VERSION_END]") == std::string::npos) {
-                if (line.find("[VERSION]") != std::string::npos) {
-                    std::istringstream ss(line);
-                    ss >> temp;
-                    std::pair<std::string, std::string> pair;
-                    ss >> pair.first;
-                    ss >> pair.second;
-                    gt.versions.push_back(pair);
-                }
-            }
-            for (std::pair<std::string, std::string> version : gt.versions) {
-                gt.version_names.push_back(version.first + version.second);
-                std::getline(trigger, gt.event_code[version]);
-                for (int i = 0; i < 12; i++) {
-                    if (gt.dependencies[i]) {
-                        std::getline(trigger, gt.dependency_mappings[version][plugin.Dependencies[i]]);
+            if (entry.extension().string() == ".txt") {
+                std::ifstream trigger(entry.string());
+                Plugin::GlobalTrigger gt;
+                std::getline(trigger, gt.name);
+                trigger >> gt.cancelable;
+                trigger >> gt.side;
+                for (int i = 0; i < 12; i++)
+                    trigger >> gt.provided_dependencies[i].second;
+                std::string line;
+                std::string temp;
+                while (std::getline(trigger, line) && line.find("[VERSION_END]") == std::string::npos) {
+                    if (line.find("[VERSION]") != std::string::npos) {
+                        std::istringstream ss(line);
+                        ss >> temp;
+                        std::pair<std::string, std::string> pair;
+                        ss >> pair.first;
+                        ss >> pair.second;
+                        gt.versions.push_back(pair);
                     }
                 }
+                for (std::pair<std::string, std::string> version : gt.versions) {
+                    gt.version_names.push_back(version.first + version.second);
+                    std::getline(trigger, gt.event_code[version]);
+                    for (int i = 0; i < 12; i++) {
+                        if (gt.provided_dependencies[i].second) {
+                            std::getline(trigger, gt.dependency_mappings[version][gt.provided_dependencies[i].first]);
+                        }
+                    }
+                }
+                trigger.close();
+                plugin.data.globaltriggers.push_back(gt);
             }
-            trigger.close();
-            plugin.data.globaltriggers.push_back(gt);
+            else if (entry.extension().string() == ".json") {
+                std::ifstream trigger_in(entry.string());
+                json trigger = json::parse(trigger_in);
+                trigger_in.close();
+
+                Plugin::GlobalTrigger gt;
+
+                gt.name = trigger.at("name");
+                gt.cancelable = trigger.at("cancelable");
+                gt.side = trigger.at("side");
+
+                std::vector<std::string> dependencies;
+                if (trigger.contains("provided_dependencies"))
+                    dependencies = trigger.at("provided_dependencies");
+                if (!dependencies.empty()) {
+                    for (const std::string dep : dependencies) {
+                        if (dep == "X")
+                            gt.provided_dependencies[0].second = true;
+                        else if (dep == "Y")
+                            gt.provided_dependencies[1].second = true;
+                        else if (dep == "Z")
+                            gt.provided_dependencies[2].second = true;
+                        else if (dep == "ENTITY")
+                            gt.provided_dependencies[3].second = true;
+                        else if (dep == "SOURCEENTITY")
+                            gt.provided_dependencies[4].second = true;
+                        else if (dep == "IMMEDIATESOURCEENTITY")
+                            gt.provided_dependencies[5].second = true;
+                        else if (dep == "WORLD")
+                            gt.provided_dependencies[6].second = true;
+                        else if (dep == "ITEMSTACK")
+                            gt.provided_dependencies[7].second = true;
+                        else if (dep == "BLOCKSTATE")
+                            gt.provided_dependencies[8].second = true;
+                        else if (dep == "DIRECTION")
+                            gt.provided_dependencies[9].second = true;
+                        else if (dep == "ADVANCEMENT")
+                            gt.provided_dependencies[10].second = true;
+                        else if (dep == "DAMAGESOURCE")
+                            gt.provided_dependencies[11].second = true;
+                        else
+                            gt.provided_dependencies.push_back({ dep, true });
+                    }
+                }
+
+                if (trigger.contains("custom_dependency_types"))
+                    gt.custom_depependency_types = trigger.at("custom_dependency_types");
+
+                if (trigger.contains("versions")) {
+                    json versions = trigger.at("versions");
+                    for (json::iterator it = versions.begin(); it != versions.end(); it++) {
+                        json version = it.value();
+
+                        std::vector<std::string> key_pair = splitString(it.key(), '_');
+                        std::pair<std::string, std::string> ver = { key_pair.at(0), key_pair.at(1) };
+                        gt.versions.push_back(ver);
+
+                        gt.event_code[ver] = version.at("event");
+                        for (int i = 0; i < gt.provided_dependencies.size(); i++)
+                            if (gt.provided_dependencies[i].second) 
+                                gt.dependency_mappings[ver][gt.provided_dependencies[i].first] = version.at(gt.provided_dependencies[i].first);
+                    }
+                }
+
+                plugin.data.globaltriggers.push_back(gt);
+            }
         }
     }
 
@@ -788,176 +897,297 @@ Plugin LoadPlugin(std::string path) {
     if (fs::exists(path + "procedures/")) {
         for (const fs::path entry : fs::directory_iterator(path + "procedures/")) { // load procedure blocks
             if (fs::is_regular_file(entry)) {
-                std::ifstream procedure(entry.string());
-                Plugin::Procedure pc;
-                std::getline(procedure, pc.name);
-                procedure >> pc.type;
-                ImVec4 color;
-                int options = 0;
-                procedure >> color.x;
-                procedure >> color.y;
-                procedure >> color.z;
-                procedure >> color.w;
-                pc.color = color;
-                bool first = true;
-                pc.category_name.clear();
-                while (true) { // for some damn reason std::getline doesn't want to work
-                    std::string s;
-                    procedure >> s;
-                    if (s == "[END]")
-                        break;
-                    else
-                        pc.category_name += (first ? "" : " ") + s;
-                    first = false;
-                }
-                procedure >> pc.category;
-                procedure >> pc.translationkey;
-                std::string temp;
-                std::getline(procedure, temp);
-                pc.translationkey.append(temp);
-                procedure >> pc.type_index;
-                int component_count = 0;
-                std::vector<int> component_types;
-                procedure >> component_count;
-                for (int i = 0; i < component_count; i++) {
-                    int type;
-                    procedure >> type;
-                    component_types.push_back(type);
-                }
-                for (const int pctype : component_types) {
-                    Plugin::Component comp;
-                    comp.type_int = pctype;
-                    procedure >> comp.name;
+                if (entry.extension().string() == ".txt") {
+                    std::ifstream procedure(entry.string());
+                    Plugin::Procedure pc;
+                    std::getline(procedure, pc.name);
+                    procedure >> pc.type;
+                    ImVec4 color;
+                    int options = 0;
+                    procedure >> color.x;
+                    procedure >> color.y;
+                    procedure >> color.z;
+                    procedure >> color.w;
+                    pc.color = color;
+                    bool first = true;
+                    pc.category_name.clear();
+                    while (true) { // for some damn reason std::getline doesn't want to work
+                        std::string s;
+                        procedure >> s;
+                        if (s == "[END]")
+                            break;
+                        else
+                            pc.category_name += (first ? "" : " ") + s;
+                        first = false;
+                    }
+                    procedure >> pc.category;
+                    procedure >> pc.translationkey;
+                    std::string temp;
                     std::getline(procedure, temp);
-                    comp.name.append(temp);
-                    temp.clear();
-                    switch (pctype) {
-                    case 0:
-                        procedure >> comp.component_value;
-                        procedure >> comp.value_int;
-                        if (comp.value_int == 4)
-                            procedure >> comp.boolean_checked;
-                        else if (comp.value_int == 5)
-                            procedure >> comp.number_default;
-                        else if (comp.value_int == 6) {
-                            comp.text_default.clear();
-                            procedure >> comp.text_default;
-                            std::getline(procedure, temp);
-                            comp.text_default.append(temp);
-                            temp.clear();
-                        }
-                        break;
-                    case 1:
-                    case 6:
-                        break;
-                    case 2:
-                        procedure >> comp.checkbox_checked;
-                        break;
-                    case 3:
-                        options = 0;
-                        procedure >> options;
-                        for (int i = 0; i < options; i++) {
-                            procedure >> temp;
-                            comp.dropdown_options.push_back(temp);
-                            std::getline(procedure, temp);
-                            comp.dropdown_options[i].append(temp);
-                            temp.clear();
-                        }
-                        break;
-                    case 4:
-                        procedure >> comp.datalist;
+                    pc.translationkey.append(temp);
+                    procedure >> pc.type_index;
+                    int component_count = 0;
+                    std::vector<int> component_types;
+                    procedure >> component_count;
+                    for (int i = 0; i < component_count; i++) {
+                        int type;
+                        procedure >> type;
+                        component_types.push_back(type);
+                    }
+                    for (const int pctype : component_types) {
+                        Plugin::Component comp;
+                        comp.type_int = pctype;
+                        procedure >> comp.name;
                         std::getline(procedure, temp);
-                        comp.datalist.append(temp);
+                        comp.name.append(temp);
                         temp.clear();
-                        procedure >> comp.entry_provider;
-                        if (comp.entry_provider)
-                            procedure >> comp.provider_name;
-                        break;
-                    case 5:
-                        procedure >> comp.disable_localvars;
-                        break;
-                    case 7:
-                        procedure >> comp.source;
+                        switch (pctype) {
+                        case 0:
+                            procedure >> comp.component_value;
+                            procedure >> comp.value_int;
+                            if (comp.value_int == 4)
+                                procedure >> comp.boolean_checked;
+                            else if (comp.value_int == 5)
+                                procedure >> comp.number_default;
+                            else if (comp.value_int == 6) {
+                                comp.text_default.clear();
+                                procedure >> comp.text_default;
+                                std::getline(procedure, temp);
+                                comp.text_default.append(temp);
+                                temp.clear();
+                            }
+                            break;
+                        case 1:
+                        case 6:
+                            break;
+                        case 2:
+                            procedure >> comp.checkbox_checked;
+                            break;
+                        case 3:
+                            options = 0;
+                            procedure >> options;
+                            for (int i = 0; i < options; i++) {
+                                procedure >> temp;
+                                comp.dropdown_options.push_back(temp);
+                                std::getline(procedure, temp);
+                                comp.dropdown_options[i].append(temp);
+                                temp.clear();
+                            }
+                            break;
+                        case 4:
+                            procedure >> comp.datalist;
+                            std::getline(procedure, temp);
+                            comp.datalist.append(temp);
+                            temp.clear();
+                            procedure >> comp.entry_provider;
+                            if (comp.entry_provider)
+                                procedure >> comp.provider_name;
+                            break;
+                        case 5:
+                            procedure >> comp.disable_localvars;
+                            break;
+                        case 7:
+                            procedure >> comp.source;
+                            std::getline(procedure, temp);
+                            comp.source.append(temp);
+                            temp.clear();
+                            procedure >> comp.width;
+                            procedure >> comp.height;
+                            break;
+                        }
+                        pc.component_names.push_back(comp.name);
+                        pc.components.push_back(comp);
+                    }
+                    std::string rtemp;
+                    std::string line_;
+                    while (std::getline(procedure, line_)) {
+                        if (line_.find("[VERSION]") != std::string::npos) {
+                            std::istringstream ss(line_);
+                            ss >> rtemp;
+                            std::pair<std::string, std::string> pair;
+                            ss >> pair.first;
+                            ss >> pair.second;
+                            pc.versions.push_back(pair);
+                            line_.clear();
+                            rtemp.clear();
+                        }
+                        else if (line_.size() == 1) {
+                            pc.world_dependency = (line_ == "1" ? true : false);
+                            break;
+                        }
+                    }
+                    procedure >> pc.requires_api;
+                    if (pc.requires_api) {
+                        procedure >> pc.api_name;
                         std::getline(procedure, temp);
-                        comp.source.append(temp);
+                        pc.api_name.append(temp);
                         temp.clear();
-                        procedure >> comp.width;
-                        procedure >> comp.height;
-                        break;
                     }
-                    pc.component_names.push_back(comp.name);
-                    pc.components.push_back(comp);
-                }
-                std::string rtemp;
-                std::string line_;
-                while (std::getline(procedure, line_)) {
-                    if (line_.find("[VERSION]") != std::string::npos) {
-                        std::istringstream ss(line_);
-                        ss >> rtemp;
-                        std::pair<std::string, std::string> pair;
-                        ss >> pair.first;
-                        ss >> pair.second;
-                        pc.versions.push_back(pair);
-                        line_.clear();
-                        rtemp.clear();
+                    int fields_withtext_count = 0;
+                    procedure >> fields_withtext_count;
+                    for (int i = 0; i < fields_withtext_count; i++) {
+                        std::string field_name;
+                        procedure >> field_name;
+                        std::getline(procedure, temp);
+                        field_name.append(temp);
+                        temp.clear();
+                        int comp_index = IndexOf(pc.component_names, field_name);
+                        procedure >> pc.components[comp_index].input_text;
+                        std::getline(procedure, temp);
+                        pc.components[comp_index].input_text.append(temp);
+                        temp.clear();
+                        pc.components[comp_index].input_hastext = true;
                     }
-                    else if (line_.size() == 1) {
-                        pc.world_dependency = (line_ == "1" ? true : false);
-                        break;
-                    }
-                }
-                procedure >> pc.requires_api;
-                if (pc.requires_api) {
-                    procedure >> pc.api_name;
-                    std::getline(procedure, temp);
-                    pc.api_name.append(temp);
-                    temp.clear();
-                }
-                int fields_withtext_count = 0;
-                procedure >> fields_withtext_count;
-                for (int i = 0; i < fields_withtext_count; i++) {
-                    std::string field_name;
-                    procedure >> field_name;
-                    std::getline(procedure, temp);
-                    field_name.append(temp);
-                    temp.clear();
-                    int comp_index = IndexOf(pc.component_names, field_name);
-                    procedure >> pc.components[comp_index].input_text;
-                    std::getline(procedure, temp);
-                    pc.components[comp_index].input_text.append(temp);
-                    temp.clear();
-                    pc.components[comp_index].input_hastext = true;
-                }
-                procedure >> pc.has_mutator;
-                if (pc.has_mutator) {
-                    std::getline(procedure, pc.mutator);
-                    if (pc.mutator.empty())
+                    procedure >> pc.has_mutator;
+                    if (pc.has_mutator) {
                         std::getline(procedure, pc.mutator);
-                }
-                if (fs::exists(path + "procedures/code/")) {
-                    for (const std::pair<std::string, std::string> version : pc.versions) {
-                        pc.version_names.push_back(version.first + version.second);
-                        std::ifstream code_in(path + "procedures/code/" + pc.name + version.first + version.second + ".txt");
-                        bool first_ = true;
-                        bool blank = true;
-                        std::string temp;
-                        std::string code_ = "";
-                        while (std::getline(code_in, temp)) {
-                            code_ += temp + "\n";
-                            first = false;
-                        }
-                        pc.code[version] = code_;
-                        code_.clear();
-                        temp.clear();
-                        code_in.close();
+                        if (pc.mutator.empty())
+                            std::getline(procedure, pc.mutator);
                     }
+                    if (fs::exists(path + "procedures/code/")) {
+                        for (const std::pair<std::string, std::string> version : pc.versions) {
+                            pc.version_names.push_back(version.first + version.second);
+                            std::ifstream code_in(path + "procedures/code/" + pc.name + version.first + version.second + ".txt");
+                            bool first_ = true;
+                            bool blank = true;
+                            std::string temp;
+                            std::string code_ = "";
+                            while (std::getline(code_in, temp)) {
+                                code_ += temp + "\n";
+                                first = false;
+                            }
+                            pc.code[version] = code_;
+                            code_.clear();
+                            temp.clear();
+                            code_in.close();
+                        }
+                    }
+                    procedure.close();
+
+                    if (new_version)
+                        plugin.ConvertProcedure(&pc, ParsedVersion, PBVersion);
+
+                    plugin.data.procedures.push_back(pc);
                 }
-                procedure.close();
+                else if (entry.extension().string() == ".json") {
+                    std::ifstream procedure_in(entry.string());
+                    json procedure;
+                    procedure = json::parse(procedure_in);
+                 
+                    Plugin::Procedure pc;
 
-                if (new_version)
-                    plugin.ConvertProcedure(&pc, ParsedVersion, PBVersion);
+                    pc.name = procedure.at("name");
+                    pc.type = procedure.at("type");
+                    pc.color.x = procedure.at("color").at(0);
+                    pc.color.y = procedure.at("color").at(1);
+                    pc.color.z = procedure.at("color").at(2);
+                    pc.color.w = procedure.at("color").at(3);
+                    pc.category_name = procedure.at("category");
+                    pc.category = procedure.at("category_index");
+                    pc.translationkey = procedure.at("translation_key");
+                    pc.world_dependency = procedure.at("world_dependency");
 
-                plugin.data.procedures.push_back(pc);
+                    if (pc.type == 1) pc.type_index = procedure.at("type_index");
+
+                    if (procedure.contains("required_api")) {
+                        pc.requires_api = true;
+                        pc.api_name = procedure.at("required_api");
+                    }
+
+                    if (procedure.contains("mutator")) {
+                        pc.has_mutator = true;
+                        pc.mutator = procedure.at("mutator");
+                    }
+
+                    if (procedure.contains("versions")) {
+                        std::vector<std::string> versions = procedure.at("versions");
+                        for (const std::string vers : versions) {
+                            std::vector<std::string> versionpair = splitString(vers, '_');
+                            std::pair<std::string, std::string> version = { versionpair.at(0), versionpair.at(1) };
+                            pc.versions.push_back(version);
+                        }
+                    }
+
+                    if (fs::exists(path + "procedures/code/")) {
+                        bool first = true;
+                        for (const std::pair<std::string, std::string> version : pc.versions) {
+                            pc.version_names.push_back(version.first + version.second);
+                            std::ifstream code_in(path + "procedures/code/" + pc.name + version.first + version.second + ".txt");
+                            bool first_ = true;
+                            bool blank = true;
+                            std::string temp;
+                            std::string code_ = "";
+                            while (std::getline(code_in, temp)) {
+                                if (!first_) code_ += "\n";
+                                code_ += temp;
+                                first_ = false;
+                            }
+                            pc.code[version] = code_;
+                            code_.clear();
+                            temp.clear();
+                            code_in.close();
+                        }
+                    }
+
+                    if (procedure.contains("components")) {
+                        json components = procedure.at("components");
+                        for (json::iterator it = components.begin(); it != components.end(); it++) {
+                            Plugin::Component comp;
+                            json component = it.value();
+
+                            comp.name = it.key();
+                            comp.type_int = component.at("type");
+
+                            switch (comp.type_int) {
+                            case 0:
+                                comp.component_value = component.at("variable_type");
+                                comp.value_int = component.at("variable_index");
+                                if (comp.value_int == 4)
+                                    comp.boolean_checked = component.at("default_value");
+                                else if (comp.value_int == 5)
+                                    comp.number_default = component.at("default_value");
+                                else if (comp.value_int == 6)
+                                    comp.text_default = component.at("default_value");
+                                break;
+                            case 1:
+                                if (component.contains("field_content")) {
+                                    comp.input_hastext = true;
+                                    comp.input_text = component.at("field_content");
+                                }
+                                break;
+                            case 2:
+                                comp.checkbox_checked = component.at("checked");
+                                break;
+                            case 3:
+                                comp.dropdown_options = component.at("dropdown_options");
+                                break;
+                            case 4:
+                                comp.datalist = component.at("datalist");
+                                if (component.contains("entry_provider")) {
+                                    comp.entry_provider = true;
+                                    comp.provider_name = component.at("entry_provider");
+                                }
+                                break;
+                            case 5:
+                                comp.disable_localvars = component.at("disable_local_variables");
+                                break;
+                            case 7:
+                                comp.source = component.at("source");
+                                comp.width = component.at("width");
+                                comp.height = component.at("height");
+                                break;
+                            }
+
+                            pc.component_names.push_back(comp.name);
+                            pc.components.push_back(comp);
+                        }
+                    }
+
+                    if (new_version)
+                        plugin.ConvertProcedure(&pc, ParsedVersion, PBVersion);
+
+                    plugin.data.procedures.push_back(pc);
+                }
             }
         }
     }
@@ -1329,6 +1559,9 @@ void LoadAllPlugins() {
             new_version = true;
         else if (PBVersion < ParsedVersion)
             old_version_warning = true;
+        std::ofstream version_out("settings/version.txt");
+        version_out << PBVersion;
+        version_out.close();
     }
     else {
         std::ofstream version_out("settings/version.txt");
@@ -1571,14 +1804,14 @@ void ExportPlugin(const Plugin plugin) {
                     else { // input
                         pc_ << "  \"output\": \"";
                         std::string type__;
-                        if (plugin.ComponentValues[pc.type_index] == "Block")
+                        if (plugin.VariableTypes[pc.type_index] == "Block")
                             type__ = "MCItemBlock";
-                        else if (plugin.ComponentValues[pc.type_index] == "Item")
+                        else if (plugin.VariableTypes[pc.type_index] == "Item")
                             type__ = "MCItem";
-                        else if (plugin.ComponentValues[pc.type_index] == "Text")
+                        else if (plugin.VariableTypes[pc.type_index] == "Text")
                             type__ = "String";
                         else
-                            type__ = plugin.ComponentValues[pc.type_index];
+                            type__ = plugin.VariableTypes[pc.type_index];
                         pc_ << type__ << "\",\n";
                     }
                     pc_ << "  \"colour\": \"" + ImVecToHex(pc.color) + "\",\n";
@@ -1687,6 +1920,10 @@ void ExportPlugin(const Plugin plugin) {
                                 pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "immediate_source_entity_from_deps\\" << '"' << "></block></value>" << '"';
                             else if (comp.component_value == "Entity" && comp.name == "noentity")
                                 pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_none\\" << '"' << "></block></value>" << '"';
+                            else if (comp.component_value == "DamageSource" && comp.name == "provideddamagesource")
+                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_deps\\" << '"' << "></block></value>" << '"';
+                            else if (comp.component_value == "DamageSource" && comp.name != "provideddamagesource")
+                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_type\\" << '"' << "><field name=\\" << '"' << "damagetype\\" << '"' << ">GENERIC</field></block></value>" << '"';
                             pc_ << (std::string)(i == inputs_size ? "\n" : ",\n");
                         }
                     }
@@ -1843,8 +2080,8 @@ void ExportPlugin(const Plugin plugin) {
                     gt_ << "{\n";
                     gt_ << "  \"dependencies_provided\": [\n";
                     std::vector<int> deps;
-                    for (int i = 0; i < 12; i++) {
-                        if (gt.dependencies[i])
+                    for (int i = 0; i < gt.provided_dependencies.size(); i++) {
+                        if (gt.provided_dependencies[i].second)
                             deps.push_back(i);
                     }
                     for (int i = 0; i < deps.size(); i++) {
@@ -1917,10 +2154,36 @@ void ExportPlugin(const Plugin plugin) {
                             break;
                         case 11:
                             gt_ << "    {\n";
-                            gt_ << "      \"name\": \"dimension\",\n";
-                            gt_ << "      \"type\": \"dimension\"\n";
+                            gt_ << "      \"name\": \"damagesource\",\n";
+                            gt_ << "      \"type\": \"damagesource\"\n";
                             gt_ << "    }";
                             break;
+                        default: {
+                            gt_ << "    {\n";
+                            gt_ << "      \"name\": \"" + LowerStr(gt.provided_dependencies[deps[i]].first) << "\",\n";
+                            std::string vartype = gt.custom_depependency_types.at(deps[i] - 12);
+                            if (vartype == "Block")
+                                vartype = "blockstate";
+                            else if (vartype == "Direction")
+                                vartype = "direction";
+                            else if (vartype == "Entity")
+                                vartype = "entity";
+                            else if (vartype == "Item")
+                                vartype = "itemstack";
+                            else if (vartype == "Boolean")
+                                vartype = "logic";
+                            else if (vartype == "Number")
+                                vartype = "number";
+                            else if (vartype == "Text")
+                                vartype = "string";
+                            else if (vartype == "DamageSource")
+                                vartype = "damagesource";
+                            else
+                                vartype = RegistryName(vartype);
+                            gt_ << "      \"type\": \"" + vartype + "\"\n";
+                            gt_ << "    }";
+                            break;
+                        }
                         }
                         if (i == deps.size() - 1)
                             gt_ << "\n";
@@ -2060,15 +2323,15 @@ void ExportPlugin(const Plugin plugin) {
                         gt_ << "    @SubscribeEvent\n";
                         gt_ << "    public static void onEventTriggered(" + gt.event_code.at(version) + " event) {\n";
                         gt_ << "        <#assign dependenciesCode><#compress>\n";
-                        if (HasDependencies(gt.dependencies)) {
+                        if (HasDependencies(gt.provided_dependencies)) {
                             gt_ << "            <@procedureDependenciesCode dependencies, {\n";
                             std::vector<int> deps;
-                            for (int i = 0; i < 12; i++) {
-                                if (gt.dependencies[i])
+                            for (int i = 0; i < gt.provided_dependencies.size(); i++) {
+                                if (gt.provided_dependencies[i].second)
                                     deps.push_back(i);
                             }
                             for (int i = 0; i < deps.size(); i++) {
-                                gt_ << "            \"" + LowerStr(plugin.Dependencies[deps[i]]) + "\": \"event." + gt.dependency_mappings.at(version).at(plugin.Dependencies[deps[i]]) + "\",\n";
+                                gt_ << "            \"" + LowerStr(gt.provided_dependencies[deps[i]].first) + "\": \"event." + gt.dependency_mappings.at(version).at(gt.provided_dependencies[deps[i]].first) + "\",\n";
                             }
                             gt_ << "            \"event\": \"event\"\n";
                             gt_ << "            }/>\n";
@@ -2883,6 +3146,9 @@ int main() {
     blank_temp = GenImageColor(30, 30, BLANK);
     blank = LoadTextureFromImage(blank_temp);
 
+    template_code_editor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::JavaFreemarker);
+    procedure_editor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::JavaFreemarker);
+
     SetWindowIcon(icon);
 
     int selected_plugin = -1;
@@ -3197,6 +3463,8 @@ int main() {
                     ImGui::Separator();
                     if (ImGui::MenuItem("Close")) {
                         SavePlugin(&loaded_plugin);
+                        current_version = -1;
+                        old_current_version = -1;
                         pluginmenu = false;
                         open_tabs.clear();
                         open_tab_names.clear();
@@ -3998,6 +4266,57 @@ int main() {
                     component_name.clear();
             }
 
+            if (adddep) {
+                if (adddep_set_pos) {
+                    if (!ImGui::IsPopupOpen("New dependency"))
+                        ImGui::OpenPopup("New dependency");
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 115) / 2 });
+                }
+                adddep_set_pos = false;
+                ImGui::SetNextWindowSize({ 300, 115 }, ImGuiCond_Once);
+                if (ImGui::BeginPopupModal("New dependency", &adddep, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                    ImGui::Spacing();
+                    ImGui::Text("Dependency name:");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::InputText(" ", &depname, ImGuiInputTextFlags_CharsNoBlank);
+                    
+                    ImGui::Text("Dependency type:");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::PushID(2);
+
+                    if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[deptype].c_str())) {
+                        for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                            if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == deptype)) {
+                                deptype = k;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::PopID();
+
+                    ImGui::Spacing();
+                    ImGui::SetCursorPosX(100);
+                    if (ImGui::Button("Add", { 100, 25 })) {
+                        if (!depname.empty()) {
+                            open_tabs[current_tab].globaltrigger->provided_dependencies.push_back({ depname, true });
+                            open_tabs[current_tab].globaltrigger->custom_depependency_types.push_back(loaded_plugin.VariableTypes.at(deptype));
+                            adddep = false;
+                        }
+                    }
+                    ImGui::End();
+                }
+            }
+            else {
+                if (!adddep_set_pos) {
+                    depname.clear();
+                    deptype = 0;
+                }
+                adddep_set_pos = true;
+            }
+
             if (addpage) {
                 if (addpage_set_pos) {
                     if (!ImGui::IsPopupOpen("New page"))
@@ -4671,11 +4990,12 @@ int main() {
                     if (!ImGui::IsPopupOpen("Template editor"))
                         ImGui::OpenPopup("Template editor");
                     ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 600) / 2, (float)(GetScreenHeight() - 600) / 2 });
+                    ImGui::SetNextWindowSize({ 600, 600 });
+                    template_code_editor.SetText(loaded_template->code);
                 }
                 template_editor_set_pos = false;
-                ImGui::SetNextWindowSize({ 600, 600 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("Template editor", &template_editor, ImGuiWindowFlags_NoCollapse)) {
-                    ImGui::InputTextMultiline(" ", &loaded_template->code, { ImGui::GetColumnWidth(), ImGui::GetWindowHeight() - 63 }, ImGuiInputTextFlags_AllowTabInput);
+                    template_code_editor.Render(loaded_template->name.c_str());
                     ImGui::Spacing();
                     if (ImGui::Button("Delete template override", { ImGui::GetColumnWidth(), 20 })) {
                         template_editor = false;
@@ -4696,8 +5016,10 @@ int main() {
                 }
             }
             else {
-                if (!template_editor_set_pos)
+                if (!template_editor_set_pos) {
+                    loaded_template->code = template_code_editor.GetText();
                     loaded_template = nullptr;
+                }
                 template_editor_set_pos = true;
             }
 
@@ -5348,9 +5670,9 @@ int main() {
                                     ImGui::Text("Procedure output type: ");
                                     NextElement(205);
                                     ImGui::PushID(225);
-                                    if (ImGui::BeginCombo(" ", loaded_plugin.ComponentValues[open_tabs[i].procedure->type_index].c_str())) {
-                                        for (int k = 0; k < 7; k++) {
-                                            if (ImGui::Selectable(loaded_plugin.ComponentValues[k].c_str(), k == open_tabs[i].procedure->type_index)) {
+                                    if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->type_index].c_str())) {
+                                        for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                                            if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->type_index)) {
                                                 open_tabs[i].procedure->type_index = k;
                                             }
                                         }
@@ -5440,11 +5762,11 @@ int main() {
                                                 ImGui::Text("Value type: ");
                                                 ImGui::SameLine();
                                                 ImGui::PushID(2);
-                                                if (ImGui::BeginCombo(" ", loaded_plugin.ComponentValues[open_tabs[i].procedure->components[j].value_int].c_str())) {
-                                                    for (int k = 0; k < 7; k++) {
-                                                        if (ImGui::Selectable(loaded_plugin.ComponentValues[k].c_str(), k == open_tabs[i].procedure->components[j].value_int)) {
+                                                if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->components[j].value_int].c_str())) {
+                                                    for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                                                        if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->components[j].value_int)) {
                                                             open_tabs[i].procedure->components[j].value_int = k;
-                                                            open_tabs[i].procedure->components[j].component_value = loaded_plugin.ComponentValues[k];
+                                                            open_tabs[i].procedure->components[j].component_value = loaded_plugin.VariableTypes[k];
                                                         }
                                                     }
                                                     ImGui::EndCombo();
@@ -5593,9 +5915,12 @@ int main() {
                                     for (int l = 0; l < open_tabs[i].procedure->versions.size() && !open_tabs[i].procedure->versions.empty(); l++) {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
-                                            current_version = l;
-                                            ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]], { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
-                                            old_current_version = l;
+                                            current_version = l + i;
+                                            if (current_version != old_current_version)
+                                                procedure_editor.SetText(open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]]);
+                                            procedure_editor.Render((tabname_pc + std::to_string(i)).c_str(), false, { ImGui::GetColumnWidth(), 400 }, true);
+                                            open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] = procedure_editor.GetText();
+                                            old_current_version = l + i;
                                             ImGui::EndTabItem();
                                         }
                                     }
@@ -5610,25 +5935,44 @@ int main() {
                                     ImGui::AlignTextToFramePadding();
                                     ImGui::Text("Trigger name: ");
                                     ImGui::SameLine();
+
                                     ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
                                     ImGui::AlignTextToFramePadding();
                                     ImGui::Text("Trigger type: ");
                                     ImGui::SameLine();
+
                                     ImGui::PushID(1);
                                     ImGui::Combo(" ", &open_tabs[i].globaltrigger->side, "Server-side only\0Client-side only\0Both");
                                     ImGui::PopID();
+
                                     ImGui::Checkbox("Is cancelable", &open_tabs[i].globaltrigger->cancelable);
+
                                     ImGui::PushID(2);
                                     ImGui::Checkbox("Code manually", &open_tabs[i].globaltrigger->manual_code);
                                     ImGui::PopID();
                                     ImGui::Spacing();
+
                                     ImGui::Text("Dependencies");
                                     if (ImGui::BeginListBox(" ")) {
-                                        for (int j = 0; j < 12; j++) {
-                                            ImGui::Selectable(loaded_plugin.Dependencies[j].c_str(), &open_tabs[i].globaltrigger->dependencies[j]);
+                                        for (int j = 0; j < open_tabs[i].globaltrigger->provided_dependencies.size(); j++) {
+                                            ImGui::Selectable(open_tabs[i].globaltrigger->provided_dependencies[j].first.c_str(), &open_tabs[i].globaltrigger->provided_dependencies[j].second);
                                         }
                                     }
                                     ImGui::EndListBox();
+
+                                    if (ImGui::Button("New dependency")) {
+                                        adddep = true;
+                                    }
+
+                                    for (int j = 0; j < open_tabs[i].globaltrigger->custom_depependency_types.size(); j++) {
+                                        if (!open_tabs[i].globaltrigger->provided_dependencies[12 + j].second) {
+                                            open_tabs[i].globaltrigger->provided_dependencies.erase(open_tabs[i].globaltrigger->provided_dependencies.begin() + (12 + j));
+                                            open_tabs[i].globaltrigger->custom_depependency_types.erase(open_tabs[i].globaltrigger->custom_depependency_types.begin() + j);
+                                        }
+                                    }
+
+                                    ImGui::Spacing();
+
                                     ImGui::Spacing();
                                     ImGui::Text("Templates");
                                     if (ImGui::BeginTabBar("template")) {
@@ -5645,19 +5989,19 @@ int main() {
                                                 ImGui::PushID(69);
                                                 ImGui::InputText(" ", &open_tabs[i].globaltrigger->event_code[version]);
                                                 ImGui::PopID();
-                                                if (HasDependencies(open_tabs[i].globaltrigger->dependencies)) {
+                                                if (HasDependencies(open_tabs[i].globaltrigger->provided_dependencies)) {
                                                     ImGui::Spacing();
                                                     ImGui::Text("Dependency code");
                                                     ImGui::Spacing();
                                                     ImGui::BeginGroup();
-                                                    for (int j = 0; j < 12; j++) {
-                                                        if (open_tabs[i].globaltrigger->dependencies[j]) {
-                                                            std::string dep = loaded_plugin.Dependencies[j] + ": ";
+                                                    for (int j = 0; j < open_tabs[i].globaltrigger->provided_dependencies.size(); j++) {
+                                                        if (open_tabs[i].globaltrigger->provided_dependencies[j].second) {
+                                                            std::string dep = open_tabs[i].globaltrigger->provided_dependencies[j].first + ": ";
                                                             ImGui::AlignTextToFramePadding();
                                                             ImGui::Text(dep.c_str());
                                                             ImGui::SameLine();
                                                             ImGui::PushID(j);
-                                                            ImGui::InputText(" ", &open_tabs[i].globaltrigger->dependency_mappings[version][loaded_plugin.Dependencies[j]]);
+                                                            ImGui::InputText(" ", &open_tabs[i].globaltrigger->dependency_mappings[version][open_tabs[i].globaltrigger->provided_dependencies[j].first]);
                                                             ImGui::PopID();
                                                         }
                                                     }
@@ -5665,9 +6009,9 @@ int main() {
                                                     if (ImGui::Button("Copy code")) {
                                                         if (!triggercode_clipboard.empty())
                                                             triggercode_clipboard.clear();
-                                                        for (int j = 0; j < 12; j++) {
-                                                            if (open_tabs[i].globaltrigger->dependencies[j]) {
-                                                                triggercode_clipboard.push_back(open_tabs[i].globaltrigger->dependency_mappings[version][loaded_plugin.Dependencies[j]]);
+                                                        for (int j = 0; j < open_tabs[i].globaltrigger->provided_dependencies.size(); j++) {
+                                                            if (open_tabs[i].globaltrigger->provided_dependencies[j].second) {
+                                                                triggercode_clipboard.push_back(open_tabs[i].globaltrigger->dependency_mappings[version][open_tabs[i].globaltrigger->provided_dependencies[j].first]);
                                                             }
                                                         }
                                                         triggercode_clipboard.push_back(open_tabs[i].globaltrigger->event_code[version]);
@@ -5676,9 +6020,9 @@ int main() {
                                                     if (ImGui::Button("Paste code")) {
                                                         if (!triggercode_clipboard.empty()) {
                                                             int n = 0;
-                                                            for (int j = 0; j < 12; j++) {
-                                                                if (open_tabs[i].globaltrigger->dependencies[j]) {
-                                                                    open_tabs[i].globaltrigger->dependency_mappings[version][loaded_plugin.Dependencies[j]] = triggercode_clipboard[n];
+                                                            for (int j = 0; j < open_tabs[i].globaltrigger->provided_dependencies.size(); j++) {
+                                                                if (open_tabs[i].globaltrigger->provided_dependencies[j].second) {
+                                                                    open_tabs[i].globaltrigger->dependency_mappings[version][open_tabs[i].globaltrigger->provided_dependencies[j].first] = triggercode_clipboard[n];
                                                                     n++;
                                                                 }
                                                             }

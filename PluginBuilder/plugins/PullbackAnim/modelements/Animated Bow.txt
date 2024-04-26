@@ -31,19 +31,19 @@ bowtexture
 1st State pulling back texture
 0
 7
-1stState
+firstState
 1
 1
 2nd State pulling back texture
 0
 7
-2ndState
+secondState
 1
 1
 3rd State pulling back texture
 0
 7
-3rdState
+thirdState
 1
 1
 Durability
@@ -72,7 +72,7 @@ ammoItems
 Shoot constantly when active
 0
 2
-constantShooting?
+constantShooting
 0
 1
 0 0

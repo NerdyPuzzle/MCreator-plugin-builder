@@ -1,0 +1,85 @@
+{
+  "name": "example procedure",
+  "type": 1,
+  "color": [
+    0.6470588445663452,
+    0.2569204270839691,
+    0.2569204270839691,
+    1.0
+  ],
+  "category": "World scoreboard (2023.4+)",
+  "category_index": 22,
+  "translation_key": "Example %1 %2 %3 %4 %5 %6 %7 %8 %9 %10 %11 %12",
+  "world_dependency": true,
+  "type_index": 6,
+  "required_api": "bruh",
+  "mutator": "bruh2",
+  "versions": [
+    "1.19.2_Forge",
+    "1.19.4_Forge"
+  ],
+  "components": {
+    "provideddamagesource": {
+      "type": 0,
+      "variable_type": "DamageSource",
+      "variable_index": 7
+    },
+    "comp2": {
+      "type": 0,
+      "variable_type": "Boolean",
+      "variable_index": 4,
+      "default_value": 1
+    },
+    "comp3": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.30000001192092896
+    },
+    "comp4": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "default text bruv"
+    },
+    "comp5": {
+      "type": 1,
+      "field_content": "deftext!!!!"
+    },
+    "comp6": {
+      "type": 2,
+      "checked": true
+    },
+    "comp7": {
+      "type": 3,
+      "dropdown_options": [
+        "option1",
+        "another option",
+        "you know the drill"
+      ]
+    },
+    "comp8": {
+      "type": 4,
+      "datalist": "exampledta",
+      "entry_provider": "providername"
+    },
+    "comp9": {
+      "type": 5,
+      "disable_local_variables": true
+    },
+    "comp10": {
+      "type": 6
+    },
+    "comp11": {
+      "type": 7,
+      "source": "./res/server.png",
+      "width": 8,
+      "height": 24
+    },
+    "comp1": {
+      "type": 0,
+      "variable_type": "DamageSource",
+      "variable_index": 7
+    }
+  }
+}

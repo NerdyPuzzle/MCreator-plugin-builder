@@ -24,14 +24,15 @@ public:
 		"DIMENSION"
 	};
 
-	std::string ComponentValues[7] {
+	std::vector<std::string> VariableTypes {
 		"Block",
 		"Direction",
 		"Entity",
 		"Item",
 		"Boolean",
 		"Number",
-		"Text"
+		"Text",
+		"DamageSource"
 	};
 
 	struct Component {
@@ -90,7 +91,24 @@ public:
 		std::vector<std::string> version_names;
 		std::map<std::pair<std::string, std::string>, std::string> event_code;
 		std::map<std::pair<std::string, std::string>, std::map<std::string, std::string>> dependency_mappings;
-		bool dependencies[12] = {false, false, false, false, false, false, false, false, false, false, false, false};
+
+		std::vector<std::pair<std::string, bool>> provided_dependencies {
+			{ "X", false },
+			{ "Y", false },
+			{ "Z", false },
+			{ "ENTITY", false },
+			{ "SOURCEENTITY", false },
+			{ "IMMEDIATESOURCEENTITY", false },
+			{ "WORLD", false },
+			{ "ITEMSTACK", false },
+			{ "BLOCKSTATE", false },
+			{ "DIRECTION", false },
+			{ "ADVANCEMENT", false },
+			{ "DAMAGESOURCE", false }
+		};
+
+		std::vector<std::string> custom_depependency_types;
+
 		bool cancelable = false;
 		int side = 0;
 		bool manual_code = false;
