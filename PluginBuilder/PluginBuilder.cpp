@@ -33,24 +33,17 @@ namespace fs = std::filesystem;
 
 using json = nlohmann::ordered_json;
 
-bool mainmenu = true;
-bool pluginmenu = false;
-float offset = 0;
-bool creatingplugin = false;
-bool creatingplugin_set_pos = true;
-bool delete_confirm = false;
-bool delete_set_pos = true;
-bool deletefile = false;
-bool deletefile_set_pos = true;
-int delete_procedure = -1;
-int delete_globaltrigger = -1;
-int delete_category = -1;
-int delete_datalist = -1;
-int delete_translation = -1;
-int delete_api = -1;
-int delete_animation = -1;
-int delete_modelement = -1;
-int delete_mutator = -1;
+Image blank_temp;
+Texture blank;
+
+std::pair<int, int> column;
+std::pair<std::string, std::string> vers__;
+
+std::vector<std::string> mapping_clipboard;
+std::vector<std::string> triggercode_clipboard;
+std::vector<std::string> translationkey_clipboard;
+std::vector<std::string> terminal_lines;
+
 std::vector<const char*> tempchars_procedures;
 std::vector<const char*> tempchars_globaltriggers;
 std::vector<const char*> tempchars_categories;
@@ -60,73 +53,87 @@ std::vector<const char*> tempchars_apis;
 std::vector<const char*> tempchars_animations;
 std::vector<const char*> tempchars_modelements;
 std::vector<const char*> tempchars_mutators;
+
+std::string file_name;
+std::string version_mc;
+std::string component_name;
+std::string mcreator_path;
+std::string pluginsdir = (std::string)getenv("USERPROFILE") + "\\.mcreator\\plugins\\";
+std::string repository_url;
+std::string dir;
+std::string commit_msg;
+std::string page_name;
+std::string page;
+std::string templ_name;
+std::string template_filter = "";
+std::string template_viewer_filter = "";
+std::string nameof__;
+std::string code__;
+std::string dirpath__;
+std::string depname = "";
+
+float offset = 0;
+
+int delete_procedure = -1;
+int delete_globaltrigger = -1;
+int delete_category = -1;
+int delete_datalist = -1;
+int delete_translation = -1;
+int delete_api = -1;
+int delete_animation = -1;
+int delete_modelement = -1;
+int delete_mutator = -1;
+int combo_item = 0;
+int generator_type = 0;
+int tabsize = 0;
+int tabsize_old = 0;
+int template_index = -1;
+int deptype = 0;
+
+bool mainmenu = true;
+bool pluginmenu = false;
+bool creatingplugin = false;
+bool creatingplugin_set_pos = true;
+bool delete_confirm = false;
+bool delete_set_pos = true;
+bool deletefile = false;
+bool deletefile_set_pos = true;
 bool active[9] = { false, false, false, false, false, false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
-int combo_item = 0;
-std::string file_name;
 bool file_open = false;
 bool addversion = false;
 bool addversion_set_pos = true;
-std::string version_mc;
-int generator_type = 0;
 bool addcomp = false;
 bool addcomp_set_pos = true;
-std::string component_name;
 bool change = true;
-int tabsize = 0;
-int tabsize_old = 0;
 bool mcreator_path_set = false;
-std::string mcreator_path;
 bool running_with_mcreator = false;
-std::vector<std::string> mapping_clipboard;
-std::vector<std::string> triggercode_clipboard;
-std::string pluginsdir = (std::string)getenv("USERPROFILE") + "\\.mcreator\\plugins\\";
 bool help_procedures = false;
 bool help_procedures_set_pos = true;
-std::vector<std::string> translationkey_clipboard;
 bool git_installed = false;
 bool git_workspace = false;
 bool git_setup = false;
 bool git_setup_set_pos = true;
-std::string repository_url;
-std::string dir;
 bool terminal = false;
-std::vector<std::string> terminal_lines;
 bool localcommit = false;
 bool localcommit_set_pos = true;
-std::string commit_msg;
 bool cloning = false;
 bool help_animation = false;
 bool help_animation_set_pos = true;
-Image blank_temp;
-Texture blank;
 bool addpage = false;
 bool addpage_set_pos = true;
-std::string page_name;
 bool editcolumn = false;
 bool editcolumn_set_pos = true;
-std::pair<int, int> column;
-std::string page;
 bool addtemplate = false;
 bool addtemplate_set_pos = true;
 bool local = false;
-std::string templ_name;
 bool template_viewer = false;
 bool template_viewer_set_pos = true;
-std::string template_filter = "";
-std::string template_viewer_filter = "";
-int template_index = -1;
-std::pair<std::string, std::string> vers__;
-std::string nameof__;
-std::string code__;
-std::string dirpath__;
 bool template_editor = false;
 bool template_editor_set_pos = true;
 bool adddep = false;
 bool adddep_set_pos = true;
-std::string depname = "";
-int deptype = 0;
 
 Plugin::TemplateLists template_lists;
 std::vector<std::string> dirpaths;
@@ -139,7 +146,7 @@ std::vector<Plugin> plugins;
 Plugin loaded_plugin;
 
 float ParsedVersion = 0;
-float PBVersion = 1.5;
+float PBVersion = 1.6;
 bool new_version = false;
 bool old_version_warning = false;
 
@@ -210,6 +217,13 @@ std::string ToUpper(std::string str) {
 int IndexOf(const std::vector<std::string> data_, const std::string& element) {
     auto it = std::find(data_.begin(), data_.end(), element);
     return (it == data_.end() ? -1 : std::distance(data_.begin(), it));
+}
+int sumOfString(const std::string& str) {
+    int sum = 0;
+    for (char ch : str) {
+        sum += static_cast<int>(ch);
+    }
+    return sum;
 }
 std::string exec(const char* cmd) {
     std::array<char, 128> buffer;
@@ -400,16 +414,22 @@ void SavePlugin(const Plugin* plugin) {
             json procedure;
 
             procedure["name"] = pc.name;
-            procedure["type"] = pc.type;
-            procedure["color"] = { pc.color.x, pc.color.y, pc.color.z, pc.color.w };
-            procedure["category"] = pc.category_name;
-            procedure["category_index"] = pc.category;
             procedure["translation_key"] = pc.translationkey;
-            procedure["world_dependency"] = pc.world_dependency;
 
-            if (pc.type == 1) procedure["type_index"] = pc.type_index;
-            if (pc.requires_api) procedure["required_api"] = pc.api_name;
-            if (pc.has_mutator) procedure["mutator"] = pc.mutator;
+            if (pc.manual_code) {
+                procedure["json"] = pc.manual_json;
+            }
+            else {
+                procedure["type"] = pc.type;
+                procedure["color"] = { pc.color.x, pc.color.y, pc.color.z, pc.color.w };
+                procedure["category"] = pc.category_name;
+                procedure["category_index"] = pc.category;
+                procedure["world_dependency"] = pc.world_dependency;
+
+                if (pc.type == 1) procedure["type_index"] = pc.type_index;
+                if (pc.requires_api) procedure["required_api"] = pc.api_name;
+                if (pc.has_mutator) procedure["mutator"] = pc.mutator;
+            }
 
             std::vector<std::string> versions;
             for (const std::pair<std::string, std::string> version : pc.versions)
@@ -417,49 +437,51 @@ void SavePlugin(const Plugin* plugin) {
             if (!versions.empty())
                 procedure["versions"] = versions;
 
-            json components;
-            for (const Plugin::Component comp : pc.components) {
-                json component;
-                component["type"] = comp.type_int;
-                switch (comp.type_int) {
-                case 0:
-                    component["variable_type"] = comp.component_value;
-                    component["variable_index"] = comp.value_int;
-                    if (comp.value_int == 4)
-                        component["default_value"] = comp.boolean_checked;
-                    else if (comp.value_int == 5)
-                        component["default_value"] = comp.number_default;
-                    else if (comp.value_int == 6)
-                        component["default_value"] = comp.text_default;
-                    break;
-                case 1:
-                    if (comp.input_hastext)
-                        component["field_content"] = comp.input_text;
-                    break;
-                case 2:
-                    component["checked"] = comp.checkbox_checked;
-                    break;
-                case 3:
-                    component["dropdown_options"] = comp.dropdown_options;
-                    break;
-                case 4:
-                    component["datalist"] = comp.datalist;
-                    if (comp.entry_provider)
-                        component["entry_provider"] = comp.provider_name;
-                    break;
-                case 5:
-                    component["disable_local_variables"] = comp.disable_localvars;
-                    break;
-                case 7:
-                    component["source"] = comp.source;
-                    component["width"] = comp.width;
-                    component["height"] = comp.height;
-                    break;
+            if (!pc.manual_code) {
+                json components;
+                for (const Plugin::Component comp : pc.components) {
+                    json component;
+                    component["type"] = comp.type_int;
+                    switch (comp.type_int) {
+                    case 0:
+                        component["variable_type"] = comp.component_value;
+                        component["variable_index"] = comp.value_int;
+                        if (comp.value_int == 4)
+                            component["default_value"] = comp.boolean_checked;
+                        else if (comp.value_int == 5)
+                            component["default_value"] = comp.number_default;
+                        else if (comp.value_int == 6)
+                            component["default_value"] = comp.text_default;
+                        break;
+                    case 1:
+                        if (comp.input_hastext)
+                            component["field_content"] = comp.input_text;
+                        break;
+                    case 2:
+                        component["checked"] = comp.checkbox_checked;
+                        break;
+                    case 3:
+                        component["dropdown_options"] = comp.dropdown_options;
+                        break;
+                    case 4:
+                        component["datalist"] = comp.datalist;
+                        if (comp.entry_provider)
+                            component["entry_provider"] = comp.provider_name;
+                        break;
+                    case 5:
+                        component["disable_local_variables"] = comp.disable_localvars;
+                        break;
+                    case 7:
+                        component["source"] = comp.source;
+                        component["width"] = comp.width;
+                        component["height"] = comp.height;
+                        break;
+                    }
+                    components[comp.name] = component;
                 }
-                components[comp.name] = component;
+                if (!pc.components.empty())
+                    procedure["components"] = components;
             }
-            if (!pc.components.empty())
-                procedure["components"] = components;
 
             if (!pc.code.empty()) {
                 if (!fs::exists(pluginpath + "procedures/code/"))
@@ -1077,26 +1099,33 @@ Plugin LoadPlugin(std::string path) {
                     Plugin::Procedure pc;
 
                     pc.name = procedure.at("name");
-                    pc.type = procedure.at("type");
-                    pc.color.x = procedure.at("color").at(0);
-                    pc.color.y = procedure.at("color").at(1);
-                    pc.color.z = procedure.at("color").at(2);
-                    pc.color.w = procedure.at("color").at(3);
-                    pc.category_name = procedure.at("category");
-                    pc.category = procedure.at("category_index");
                     pc.translationkey = procedure.at("translation_key");
-                    pc.world_dependency = procedure.at("world_dependency");
 
-                    if (pc.type == 1) pc.type_index = procedure.at("type_index");
-
-                    if (procedure.contains("required_api")) {
-                        pc.requires_api = true;
-                        pc.api_name = procedure.at("required_api");
+                    if (procedure.contains("json")) {
+                        pc.manual_code = true;
+                        pc.manual_json = procedure.at("json");
                     }
+                    else {
+                        pc.type = procedure.at("type");
+                        pc.color.x = procedure.at("color").at(0);
+                        pc.color.y = procedure.at("color").at(1);
+                        pc.color.z = procedure.at("color").at(2);
+                        pc.color.w = procedure.at("color").at(3);
+                        pc.category_name = procedure.at("category");
+                        pc.category = procedure.at("category_index");
+                        pc.world_dependency = procedure.at("world_dependency");
 
-                    if (procedure.contains("mutator")) {
-                        pc.has_mutator = true;
-                        pc.mutator = procedure.at("mutator");
+                        if (pc.type == 1) pc.type_index = procedure.at("type_index");
+
+                        if (procedure.contains("required_api")) {
+                            pc.requires_api = true;
+                            pc.api_name = procedure.at("required_api");
+                        }
+
+                        if (procedure.contains("mutator")) {
+                            pc.has_mutator = true;
+                            pc.mutator = procedure.at("mutator");
+                        }
                     }
 
                     if (procedure.contains("versions")) {
@@ -1129,57 +1158,59 @@ Plugin LoadPlugin(std::string path) {
                         }
                     }
 
-                    if (procedure.contains("components")) {
-                        json components = procedure.at("components");
-                        for (json::iterator it = components.begin(); it != components.end(); it++) {
-                            Plugin::Component comp;
-                            json component = it.value();
+                    if (!pc.manual_code) {
+                        if (procedure.contains("components")) {
+                            json components = procedure.at("components");
+                            for (json::iterator it = components.begin(); it != components.end(); it++) {
+                                Plugin::Component comp;
+                                json component = it.value();
 
-                            comp.name = it.key();
-                            comp.type_int = component.at("type");
+                                comp.name = it.key();
+                                comp.type_int = component.at("type");
 
-                            switch (comp.type_int) {
-                            case 0:
-                                comp.component_value = component.at("variable_type");
-                                comp.value_int = component.at("variable_index");
-                                if (comp.value_int == 4)
-                                    comp.boolean_checked = component.at("default_value");
-                                else if (comp.value_int == 5)
-                                    comp.number_default = component.at("default_value");
-                                else if (comp.value_int == 6)
-                                    comp.text_default = component.at("default_value");
-                                break;
-                            case 1:
-                                if (component.contains("field_content")) {
-                                    comp.input_hastext = true;
-                                    comp.input_text = component.at("field_content");
+                                switch (comp.type_int) {
+                                case 0:
+                                    comp.component_value = component.at("variable_type");
+                                    comp.value_int = component.at("variable_index");
+                                    if (comp.value_int == 4)
+                                        comp.boolean_checked = component.at("default_value");
+                                    else if (comp.value_int == 5)
+                                        comp.number_default = component.at("default_value");
+                                    else if (comp.value_int == 6)
+                                        comp.text_default = component.at("default_value");
+                                    break;
+                                case 1:
+                                    if (component.contains("field_content")) {
+                                        comp.input_hastext = true;
+                                        comp.input_text = component.at("field_content");
+                                    }
+                                    break;
+                                case 2:
+                                    comp.checkbox_checked = component.at("checked");
+                                    break;
+                                case 3:
+                                    comp.dropdown_options = component.at("dropdown_options");
+                                    break;
+                                case 4:
+                                    comp.datalist = component.at("datalist");
+                                    if (component.contains("entry_provider")) {
+                                        comp.entry_provider = true;
+                                        comp.provider_name = component.at("entry_provider");
+                                    }
+                                    break;
+                                case 5:
+                                    comp.disable_localvars = component.at("disable_local_variables");
+                                    break;
+                                case 7:
+                                    comp.source = component.at("source");
+                                    comp.width = component.at("width");
+                                    comp.height = component.at("height");
+                                    break;
                                 }
-                                break;
-                            case 2:
-                                comp.checkbox_checked = component.at("checked");
-                                break;
-                            case 3:
-                                comp.dropdown_options = component.at("dropdown_options");
-                                break;
-                            case 4:
-                                comp.datalist = component.at("datalist");
-                                if (component.contains("entry_provider")) {
-                                    comp.entry_provider = true;
-                                    comp.provider_name = component.at("entry_provider");
-                                }
-                                break;
-                            case 5:
-                                comp.disable_localvars = component.at("disable_local_variables");
-                                break;
-                            case 7:
-                                comp.source = component.at("source");
-                                comp.width = component.at("width");
-                                comp.height = component.at("height");
-                                break;
+
+                                pc.component_names.push_back(comp.name);
+                                pc.components.push_back(comp);
                             }
-
-                            pc.component_names.push_back(comp.name);
-                            pc.components.push_back(comp);
                         }
                     }
 
@@ -1725,286 +1756,290 @@ void ExportPlugin(const Plugin plugin) {
             if (!plugin.data.procedures.empty()) {
                 for (const Plugin::Procedure pc : plugin.data.procedures) {
                     std::ofstream pc_("temp_data\\" + RegistryName(pc.name) + ".json");
-                    pc_ << "{\n";
-                    pc_ << "  \"args0\": [\n";
-                    int i = 0;
-                    for (const Plugin::Component comp : pc.components) {
-                        i++;
-                        pc_ << "    {\n";
-                        std::string type_;
-                        switch (comp.type_int) {
-                        case 0:
-                            pc_ << "      \"type\": \"input_value\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\",\n";
-                            pc_ << "      \"check\": \"";
-                            if (comp.component_value == "Block")
-                                type_ = "MCItemBlock";
-                            else if (comp.component_value == "Item")
-                                type_ = "MCItem";
-                            else if (comp.component_value == "Text")
-                                type_ = "String";
-                            else
-                                type_ = comp.component_value;
-                            pc_ << type_ << "\"\n";
-                            break;
-                        case 1:
-                            pc_ << "      \"type\": \"field_input\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\"" + (std::string)(comp.input_hastext ? "," : "") + "\n";
-                            if (comp.input_hastext)
-                                pc_ << "      \"text\": \"" + comp.input_text + "\"\n";
-                            break;
-                        case 2:
-                            pc_ << "      \"type\": \"field_checkbox\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\",\n";
-                            pc_ << "      \"checked\": " + (std::string)(comp.checkbox_checked ? "true\n" : "false\n");
-                            break;
-                        case 3:
-                            pc_ << "      \"type\": \"field_dropdown\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\",\n";
-                            pc_ << "      \"options\": [\n";
-                            for (int j = 0; j < comp.dropdown_options.size(); j++) {
-                                pc_ << "        [\n";
-                                pc_ << "          \"" + comp.dropdown_options[j] + "\",\n";
-                                pc_ << "          \"" + comp.dropdown_options[j] + "\"\n";
-                                pc_ << "        ]" + (std::string)(j == comp.dropdown_options.size() - 1 ? "\n" : ",\n");
-                            }
-                            pc_ << "      ]\n";
-                            break;
-                        case 4:
-                            pc_ << "      \"type\": \"field_data_list_selector\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\",\n";
-                            pc_ << "      \"datalist\": \"" + comp.datalist + "\"" + (comp.entry_provider ? "," : "") + "\n";
-                            if (comp.entry_provider)
-                                pc_ << "      \"customEntryProviders\": \"" + comp.provider_name + "\"\n";
-                            break;
-                        case 5:
-                            pc_ << "      \"type\": \"input_statement\",\n";
-                            pc_ << "      \"name\": \"" + comp.name + "\"\n";
-                            break;
-                        case 6:
-                            pc_ << "      \"type\": \"input_dummy\"\n";
-                            break;
-                        case 7:
-                            pc_ << "      \"type\": \"field_image\",\n";
-                            pc_ << "      \"src\": \"" + comp.source + "\",\n";
-                            pc_ << "      \"width\": \"" + std::to_string(comp.width) + "\",\n";
-                            pc_ << "      \"height\": \"" + std::to_string(comp.height) + "\"\n";
-                            break;
-                        }
-                        pc_ << "    }" + (std::string)(i == pc.components.size() ? "\n" : ",\n");
-                    }
-                    pc_ << "  ],\n";
-                    pc_ << "  \"inputsInline\": true,\n";
-                    if (pc.has_mutator)
-                        pc_ << "  \"mutator\": \"" + RegistryName(pc.mutator) + "_mutator\",\n";
-                    if (pc.type == 0) { // output
-                        pc_ << "  \"previousStatement\": null,\n";
-                        pc_ << "  \"nextStatement\": null,\n";
-                    }
-                    else { // input
-                        pc_ << "  \"output\": \"";
-                        std::string type__;
-                        if (plugin.VariableTypes[pc.type_index] == "Block")
-                            type__ = "MCItemBlock";
-                        else if (plugin.VariableTypes[pc.type_index] == "Item")
-                            type__ = "MCItem";
-                        else if (plugin.VariableTypes[pc.type_index] == "Text")
-                            type__ = "String";
-                        else
-                            type__ = plugin.VariableTypes[pc.type_index];
-                        pc_ << type__ << "\",\n";
-                    }
-                    pc_ << "  \"colour\": \"" + ImVecToHex(pc.color) + "\",\n";
-                    pc_ << "  \"mcreator\": {\n";
-                    pc_ << "    \"toolbox_id\": \"";
-                    if (pc.category <= 22) {
-                        if (pc.category_name == "Block data")
-                            pc_ << "blockdata";
-                        else if (pc.category_name == "Block management") // legacy support to not break plugins
-                            pc_ << "blockactions";
-                        else if (pc.category_name == "Block management (2023.4+ = Block actions)")
-                            pc_ << "blockactions";
-                        else if (pc.category_name == "Command parameters")
-                            pc_ << "commands";
-                        else if (pc.category_name == "Direction procedures")
-                            pc_ << "directionactions";
-                        else if (pc.category_name == "Energy & fluid tanks")
-                            pc_ << "energyandfluid";
-                        else if (pc.category_name == "Entity data")
-                            pc_ << "entitydata";
-                        else if (pc.category_name == "Entity management") // legacy support to not break plugins
-                            pc_ << "entitymanagement";
-                        else if (pc.category_name == "Entity management (2023.4+ = Entity actions)")
-                            pc_ << "entitymanagement";
-                        else if (pc.category_name == "Item procedures") // legacy support to not break plugins
-                            pc_ << "itemmanagement";
-                        else if (pc.category_name == "Item procedures (2023.4+ = Item actions)")
-                            pc_ << "itemmanagement";
-                        else if (pc.category_name == "Player data")
-                            pc_ << "playerdata";
-                        else if (pc.category_name == "Player procedures") // legacy support to not break plugins
-                            pc_ << "playermanagement";
-                        else if (pc.category_name == "Player procedures (2023.4+ = Player actions)")
-                            pc_ << "playermanagement";
-                        else if (pc.category_name == "Projectile procedures")
-                            pc_ << "projectilemanagement";
-                        else if (pc.category_name == "Slot & GUI procedures")
-                            pc_ << "guimanagement";
-                        else if (pc.category_name == "World data")
-                            pc_ << "worlddata";
-                        else if (pc.category_name == "World management") // legacy support to not break plugins
-                            pc_ << "worldmanagement";
-                        else if (pc.category_name == "World management (2023.4+ = World actions)")
-                            pc_ << "worldmanagement";
-                        else if (pc.category_name == "Minecraft components")
-                            pc_ << "mcelements";
-                        else if (pc.category_name == "Flow control")
-                            pc_ << "logicloops";
-                        else if (pc.category_name == "Logic")
-                            pc_ << "logicoperations";
-                        else if (pc.category_name == "Math")
-                            pc_ << "math";
-                        else if (pc.category_name == "Text")
-                            pc_ << "text";
-                        else if (pc.category_name == "Advanced")
-                            pc_ << "advanced";
-                        else if (pc.category_name == "Damage procedures (2023.4+)")
-                            pc_ << "damagesources";
-                        else if (pc.category_name == "Item data (2023.4+)")
-                            pc_ << "itemdata";
-                        else if (pc.category_name == "World scoreboard (2023.4+)")
-                            pc_ << "scoreboard";
-                    }
-                    else
-                        pc_ << RegistryName(pc.category_name);
-                    pc_ << "\",\n";
-                    pc_ << "    \"toolbox_init\": [\n";
-                    if (pc.has_mutator) {
-                        pc_ << "      \"<mutation inputs=\\\"1\\\"></mutation>\"";
-                    }
-                    i = 0;
-                    int inputs_size = 0;
-                    for (const Plugin::Component comp : pc.components)
-                        if (comp.type_int == 0)
-                            inputs_size++;
-                    if (inputs_size != 0 && pc.has_mutator)
-                        pc_ << ",\n";
-                    else if (inputs_size == 0 && pc.has_mutator)
-                        pc_ << "\n";
-                    for (const Plugin::Component comp : pc.components) {
-                        if (comp.type_int == 0) {
-                            i++;
-                            if (comp.component_value == "Number" && (comp.name == "X" || comp.name == "Y" || comp.name == "Z" || comp.name == "x" || comp.name == "y" || comp.name == "z"))
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "coord_" << LowerStr(comp.name) << "\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Number")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "math_number\\" << '"' << ">" << "<field name=" << "\\" << '"' << "NUM\\" << '"' << ">" << comp.number_default << "</field>" << "</block></value>" << '"';
-                            else if (comp.component_value == "Direction")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "direction_unspecified\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Boolean")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "logic_boolean\\" << '"' << ">" << "<field name=" << "\\" << '"' << "BOOL\\" << '"' << ">" << (comp.boolean_checked == 0 ? "TRUE" : "FALSE") << "</field>" << "</block></value>" << '"';
-                            else if (comp.component_value == "Text")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "text\\" << '"' << ">" << "<field name=" << "\\" << '"' << "TEXT\\" << '"' << ">" << comp.text_default << "</field>" << "</block></value>" << '"';
-                            else if (comp.component_value == "Block" && comp.name != "providedblockstate")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_allblocks\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
-                            else if (comp.component_value == "Block" && comp.name == "providedblockstate")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "blockstate_from_deps\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Item" && comp.name != "provideditemstack")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_all\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
-                            else if (comp.component_value == "Item" && comp.name == "provideditemstack")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "itemstack_to_mcitem\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Entity" && comp.name != "sourceentity" && comp.name != "immediatesourceentity" && comp.name != "noentity")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_from_deps\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Entity" && comp.name == "sourceentity")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "source_entity_from_deps\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Entity" && comp.name == "immediatesourceentity")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "immediate_source_entity_from_deps\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "Entity" && comp.name == "noentity")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_none\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "DamageSource" && comp.name == "provideddamagesource")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_deps\\" << '"' << "></block></value>" << '"';
-                            else if (comp.component_value == "DamageSource" && comp.name != "provideddamagesource")
-                                pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_type\\" << '"' << "><field name=\\" << '"' << "damagetype\\" << '"' << ">GENERIC</field></block></value>" << '"';
-                            pc_ << (std::string)(i == inputs_size ? "\n" : ",\n");
-                        }
-                    }
-                    pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
-                    if (!pc.components.empty()) {
-                        i = 0;
-                        std::vector<std::string> inputs;
-                        std::vector<std::string> fields;
-                        std::vector<std::string> statements;
-                        std::vector<bool> disable_locals;
+                    if (pc.manual_code)
+                        pc_ << pc.manual_json;
+                    else {
+                        pc_ << "{\n";
+                        pc_ << "  \"args0\": [\n";
+                        int i = 0;
                         for (const Plugin::Component comp : pc.components) {
+                            i++;
+                            pc_ << "    {\n";
+                            std::string type_;
                             switch (comp.type_int) {
                             case 0:
-                                inputs.push_back(comp.name);
+                                pc_ << "      \"type\": \"input_value\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\",\n";
+                                pc_ << "      \"check\": \"";
+                                if (comp.component_value == "Block")
+                                    type_ = "MCItemBlock";
+                                else if (comp.component_value == "Item")
+                                    type_ = "MCItem";
+                                else if (comp.component_value == "Text")
+                                    type_ = "String";
+                                else
+                                    type_ = comp.component_value;
+                                pc_ << type_ << "\"\n";
                                 break;
                             case 1:
+                                pc_ << "      \"type\": \"field_input\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\"" + (std::string)(comp.input_hastext ? "," : "") + "\n";
+                                if (comp.input_hastext)
+                                    pc_ << "      \"text\": \"" + comp.input_text + "\"\n";
+                                break;
                             case 2:
+                                pc_ << "      \"type\": \"field_checkbox\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\",\n";
+                                pc_ << "      \"checked\": " + (std::string)(comp.checkbox_checked ? "true\n" : "false\n");
+                                break;
                             case 3:
+                                pc_ << "      \"type\": \"field_dropdown\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\",\n";
+                                pc_ << "      \"options\": [\n";
+                                for (int j = 0; j < comp.dropdown_options.size(); j++) {
+                                    pc_ << "        [\n";
+                                    pc_ << "          \"" + comp.dropdown_options[j] + "\",\n";
+                                    pc_ << "          \"" + comp.dropdown_options[j] + "\"\n";
+                                    pc_ << "        ]" + (std::string)(j == comp.dropdown_options.size() - 1 ? "\n" : ",\n");
+                                }
+                                pc_ << "      ]\n";
+                                break;
                             case 4:
-                                fields.push_back(comp.name);
+                                pc_ << "      \"type\": \"field_data_list_selector\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\",\n";
+                                pc_ << "      \"datalist\": \"" + comp.datalist + "\"" + (comp.entry_provider ? "," : "") + "\n";
+                                if (comp.entry_provider)
+                                    pc_ << "      \"customEntryProviders\": \"" + comp.provider_name + "\"\n";
                                 break;
                             case 5:
-                                statements.push_back(comp.name);
-                                disable_locals.push_back(comp.disable_localvars);
+                                pc_ << "      \"type\": \"input_statement\",\n";
+                                pc_ << "      \"name\": \"" + comp.name + "\"\n";
                                 break;
                             case 6:
+                                pc_ << "      \"type\": \"input_dummy\"\n";
+                                break;
                             case 7:
+                                pc_ << "      \"type\": \"field_image\",\n";
+                                pc_ << "      \"src\": \"" + comp.source + "\",\n";
+                                pc_ << "      \"width\": \"" + std::to_string(comp.width) + "\",\n";
+                                pc_ << "      \"height\": \"" + std::to_string(comp.height) + "\"\n";
                                 break;
                             }
+                            pc_ << "    }" + (std::string)(i == pc.components.size() ? "\n" : ",\n");
                         }
-                        if (!inputs.empty()) {
-                            pc_ << "    \"inputs\": [\n";
-                            for (const std::string s : inputs) {
+                        pc_ << "  ],\n";
+                        pc_ << "  \"inputsInline\": true,\n";
+                        if (pc.has_mutator)
+                            pc_ << "  \"mutator\": \"" + RegistryName(pc.mutator) + "_mutator\",\n";
+                        if (pc.type == 0) { // output
+                            pc_ << "  \"previousStatement\": null,\n";
+                            pc_ << "  \"nextStatement\": null,\n";
+                        }
+                        else { // input
+                            pc_ << "  \"output\": \"";
+                            std::string type__;
+                            if (plugin.VariableTypes[pc.type_index] == "Block")
+                                type__ = "MCItemBlock";
+                            else if (plugin.VariableTypes[pc.type_index] == "Item")
+                                type__ = "MCItem";
+                            else if (plugin.VariableTypes[pc.type_index] == "Text")
+                                type__ = "String";
+                            else
+                                type__ = plugin.VariableTypes[pc.type_index];
+                            pc_ << type__ << "\",\n";
+                        }
+                        pc_ << "  \"colour\": \"" + ImVecToHex(pc.color) + "\",\n";
+                        pc_ << "  \"mcreator\": {\n";
+                        pc_ << "    \"toolbox_id\": \"";
+                        if (pc.category <= 22) {
+                            if (pc.category_name == "Block data")
+                                pc_ << "blockdata";
+                            else if (pc.category_name == "Block management") // legacy support to not break plugins
+                                pc_ << "blockactions";
+                            else if (pc.category_name == "Block management (2023.4+ = Block actions)")
+                                pc_ << "blockactions";
+                            else if (pc.category_name == "Command parameters")
+                                pc_ << "commands";
+                            else if (pc.category_name == "Direction procedures")
+                                pc_ << "directionactions";
+                            else if (pc.category_name == "Energy & fluid tanks")
+                                pc_ << "energyandfluid";
+                            else if (pc.category_name == "Entity data")
+                                pc_ << "entitydata";
+                            else if (pc.category_name == "Entity management") // legacy support to not break plugins
+                                pc_ << "entitymanagement";
+                            else if (pc.category_name == "Entity management (2023.4+ = Entity actions)")
+                                pc_ << "entitymanagement";
+                            else if (pc.category_name == "Item procedures") // legacy support to not break plugins
+                                pc_ << "itemmanagement";
+                            else if (pc.category_name == "Item procedures (2023.4+ = Item actions)")
+                                pc_ << "itemmanagement";
+                            else if (pc.category_name == "Player data")
+                                pc_ << "playerdata";
+                            else if (pc.category_name == "Player procedures") // legacy support to not break plugins
+                                pc_ << "playermanagement";
+                            else if (pc.category_name == "Player procedures (2023.4+ = Player actions)")
+                                pc_ << "playermanagement";
+                            else if (pc.category_name == "Projectile procedures")
+                                pc_ << "projectilemanagement";
+                            else if (pc.category_name == "Slot & GUI procedures")
+                                pc_ << "guimanagement";
+                            else if (pc.category_name == "World data")
+                                pc_ << "worlddata";
+                            else if (pc.category_name == "World management") // legacy support to not break plugins
+                                pc_ << "worldmanagement";
+                            else if (pc.category_name == "World management (2023.4+ = World actions)")
+                                pc_ << "worldmanagement";
+                            else if (pc.category_name == "Minecraft components")
+                                pc_ << "mcelements";
+                            else if (pc.category_name == "Flow control")
+                                pc_ << "logicloops";
+                            else if (pc.category_name == "Logic")
+                                pc_ << "logicoperations";
+                            else if (pc.category_name == "Math")
+                                pc_ << "math";
+                            else if (pc.category_name == "Text")
+                                pc_ << "text";
+                            else if (pc.category_name == "Advanced")
+                                pc_ << "advanced";
+                            else if (pc.category_name == "Damage procedures (2023.4+)")
+                                pc_ << "damagesources";
+                            else if (pc.category_name == "Item data (2023.4+)")
+                                pc_ << "itemdata";
+                            else if (pc.category_name == "World scoreboard (2023.4+)")
+                                pc_ << "scoreboard";
+                        }
+                        else
+                            pc_ << RegistryName(pc.category_name);
+                        pc_ << "\",\n";
+                        pc_ << "    \"toolbox_init\": [\n";
+                        if (pc.has_mutator) {
+                            pc_ << "      \"<mutation inputs=\\\"1\\\"></mutation>\"";
+                        }
+                        i = 0;
+                        int inputs_size = 0;
+                        for (const Plugin::Component comp : pc.components)
+                            if (comp.type_int == 0)
+                                inputs_size++;
+                        if (inputs_size != 0 && pc.has_mutator)
+                            pc_ << ",\n";
+                        else if (inputs_size == 0 && pc.has_mutator)
+                            pc_ << "\n";
+                        for (const Plugin::Component comp : pc.components) {
+                            if (comp.type_int == 0) {
                                 i++;
-                                pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
+                                if (comp.component_value == "Number" && (comp.name == "X" || comp.name == "Y" || comp.name == "Z" || comp.name == "x" || comp.name == "y" || comp.name == "z"))
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "coord_" << LowerStr(comp.name) << "\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Number")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "math_number\\" << '"' << ">" << "<field name=" << "\\" << '"' << "NUM\\" << '"' << ">" << comp.number_default << "</field>" << "</block></value>" << '"';
+                                else if (comp.component_value == "Direction")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "direction_unspecified\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Boolean")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "logic_boolean\\" << '"' << ">" << "<field name=" << "\\" << '"' << "BOOL\\" << '"' << ">" << (comp.boolean_checked == 0 ? "TRUE" : "FALSE") << "</field>" << "</block></value>" << '"';
+                                else if (comp.component_value == "Text")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "text\\" << '"' << ">" << "<field name=" << "\\" << '"' << "TEXT\\" << '"' << ">" << comp.text_default << "</field>" << "</block></value>" << '"';
+                                else if (comp.component_value == "Block" && comp.name != "providedblockstate")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_allblocks\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
+                                else if (comp.component_value == "Block" && comp.name == "providedblockstate")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "blockstate_from_deps\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Item" && comp.name != "provideditemstack")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "mcitem_all\\" << '"' << ">" << "<field name=" << "\\" << '"' << "value\\" << '"' << "></field>" << "</block></value>" << '"';
+                                else if (comp.component_value == "Item" && comp.name == "provideditemstack")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "itemstack_to_mcitem\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Entity" && comp.name != "sourceentity" && comp.name != "immediatesourceentity" && comp.name != "noentity")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_from_deps\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Entity" && comp.name == "sourceentity")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "source_entity_from_deps\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Entity" && comp.name == "immediatesourceentity")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "immediate_source_entity_from_deps\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "Entity" && comp.name == "noentity")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "entity_none\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "DamageSource" && comp.name == "provideddamagesource")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_deps\\" << '"' << "></block></value>" << '"';
+                                else if (comp.component_value == "DamageSource" && comp.name != "provideddamagesource")
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_type\\" << '"' << "><field name=\\" << '"' << "damagetype\\" << '"' << ">GENERIC</field></block></value>" << '"';
+                                pc_ << (std::string)(i == inputs_size ? "\n" : ",\n");
                             }
-                            pc_ << "    ]" + (std::string)(!statements.empty() || !fields.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
-                            i = 0;
                         }
-                        if (!fields.empty()) {
-                            pc_ << "    \"fields\": [\n";
-                            for (const std::string s : fields) {
-                                i++;
-                                pc_ << "      \"" + s + "\"" + (std::string)(i == fields.size() ? "\n" : ",\n");
+                        pc_ << "    ]" + (std::string)(!pc.components.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                        if (!pc.components.empty()) {
+                            i = 0;
+                            std::vector<std::string> inputs;
+                            std::vector<std::string> fields;
+                            std::vector<std::string> statements;
+                            std::vector<bool> disable_locals;
+                            for (const Plugin::Component comp : pc.components) {
+                                switch (comp.type_int) {
+                                case 0:
+                                    inputs.push_back(comp.name);
+                                    break;
+                                case 1:
+                                case 2:
+                                case 3:
+                                case 4:
+                                    fields.push_back(comp.name);
+                                    break;
+                                case 5:
+                                    statements.push_back(comp.name);
+                                    disable_locals.push_back(comp.disable_localvars);
+                                    break;
+                                case 6:
+                                case 7:
+                                    break;
+                                }
                             }
-                            pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
-                            i = 0;
-                        }
-                        if (!statements.empty()) {
-                            pc_ << "    \"statements\": [\n";
-                            for (const std::string s : statements) {
-                                i++;
-                                pc_ << "      {\n";
-                                pc_ << "        \"name\": \"" + s + "\",\n";
-                                pc_ << "        \"disable_local_variables\": " + (std::string)(disable_locals[i - 1] ? "true\n" : "false\n");
-                                pc_ << "      }\n";
+                            if (!inputs.empty()) {
+                                pc_ << "    \"inputs\": [\n";
+                                for (const std::string s : inputs) {
+                                    i++;
+                                    pc_ << "      \"" + s + "\"" + (std::string)(i == inputs.size() ? "\n" : ",\n");
+                                }
+                                pc_ << "    ]" + (std::string)(!statements.empty() || !fields.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                                i = 0;
                             }
-                            pc_ << "    ]" + (std::string)(pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
-                            i = 0;
+                            if (!fields.empty()) {
+                                pc_ << "    \"fields\": [\n";
+                                for (const std::string s : fields) {
+                                    i++;
+                                    pc_ << "      \"" + s + "\"" + (std::string)(i == fields.size() ? "\n" : ",\n");
+                                }
+                                pc_ << "    ]" + (std::string)(!statements.empty() || pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                                i = 0;
+                            }
+                            if (!statements.empty()) {
+                                pc_ << "    \"statements\": [\n";
+                                for (const std::string s : statements) {
+                                    i++;
+                                    pc_ << "      {\n";
+                                    pc_ << "        \"name\": \"" + s + "\",\n";
+                                    pc_ << "        \"disable_local_variables\": " + (std::string)(disable_locals[i - 1] ? "true\n" : "false\n");
+                                    pc_ << "      }\n";
+                                }
+                                pc_ << "    ]" + (std::string)(pc.world_dependency || pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                                i = 0;
+                            }
                         }
+                        if (pc.world_dependency) {
+                            pc_ << "    \"dependencies\": [\n";
+                            pc_ << "      {\n";
+                            pc_ << "        \"name\": \"world\",\n";
+                            pc_ << "        \"type\": \"world\"\n";
+                            pc_ << "      }\n";
+                            pc_ << "    ]" + (std::string)(pc.requires_api || pc.has_mutator ? ",\n" : "\n");
+                        }
+                        if (pc.requires_api) {
+                            pc_ << "    \"required_apis\": [\n";
+                            pc_ << "      \"" + RegistryName(pc.api_name) + "\"\n";
+                            pc_ << "    ]" + (std::string)(pc.has_mutator ? ",\n" : "\n");
+                        }
+                        if (pc.has_mutator) {
+                            pc_ << "    \"repeating_inputs\": [\n";
+                            pc_ << "      \"entry\"\n";
+                            pc_ << "    ]\n";
+                        }
+                        pc_ << "  }\n";
+                        pc_ << "}";
                     }
-                    if (pc.world_dependency) {
-                        pc_ << "    \"dependencies\": [\n";
-                        pc_ << "      {\n";
-                        pc_ << "        \"name\": \"world\",\n";
-                        pc_ << "        \"type\": \"world\"\n";
-                        pc_ << "      }\n";
-                        pc_ << "    ]" + (std::string)(pc.requires_api || pc.has_mutator ? ",\n" : "\n");
-                    }
-                    if (pc.requires_api) {
-                        pc_ << "    \"required_apis\": [\n";
-                        pc_ << "      \"" + RegistryName(pc.api_name) + "\"\n";
-                        pc_ << "    ]" + (std::string)(pc.has_mutator ? ",\n" : "\n");
-                    }
-                    if (pc.has_mutator) {
-                        pc_ << "    \"repeating_inputs\": [\n";
-                        pc_ << "      \"entry\"\n";
-                        pc_ << "    ]\n";
-                    }
-                    pc_ << "  }\n";
-                    pc_ << "}";
                     pc_.close();
                     zip.AddFile("temp_data\\" + RegistryName(pc.name) + ".json", "procedures\\" + RegistryName(pc.name) + ".json");
                     lang << "blockly.block." + RegistryName(pc.name) + "=" + pc.translationkey + "\n";
@@ -5647,265 +5682,294 @@ int main() {
                             }
                             case PROCEDURE: 
                             {
-                                float length = 196;
-                                if (open_tabs[i].procedure->requires_api)
-                                    length += 23;
-                                if (open_tabs[i].procedure->type == 1)
-                                    length += 23;
-                                if (open_tabs[i].procedure->has_mutator)
-                                    length += 23;
-                                bool longer = open_tabs[i].procedure->requires_api;
-                                ImGui::BeginChild(23, { ImGui::GetColumnWidth(), length }, true);
-                                ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure name:");
-                                NextElement(205);
-                                ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
-                                ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure type:");
-                                NextElement(205);
-                                ImGui::PushID(1);
-                                ImGui::Combo(" ", &open_tabs[i].procedure->type, "Input\0Output");
-                                if (open_tabs[i].procedure->type == 1) {
+                                if (!open_tabs[i].procedure->manual_code) {
+                                    float length = 219;
+                                    if (open_tabs[i].procedure->requires_api)
+                                        length += 23;
+                                    if (open_tabs[i].procedure->type == 1)
+                                        length += 23;
+                                    if (open_tabs[i].procedure->has_mutator)
+                                        length += 23;
+                                    bool longer = open_tabs[i].procedure->requires_api;
+                                    ImGui::BeginChild(23, { ImGui::GetColumnWidth(), length }, true);
                                     ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("Procedure output type: ");
+                                    ImGui::Text("Procedure name:");
                                     NextElement(205);
-                                    ImGui::PushID(225);
-                                    if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->type_index].c_str())) {
-                                        for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
-                                            if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->type_index)) {
-                                                open_tabs[i].procedure->type_index = k;
+                                    ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure type:");
+                                    NextElement(205);
+                                    ImGui::PushID(1);
+                                    ImGui::Combo(" ", &open_tabs[i].procedure->type, "Input\0Output");
+                                    if (open_tabs[i].procedure->type == 1) {
+                                        ImGui::AlignTextToFramePadding();
+                                        ImGui::Text("Procedure output type: ");
+                                        NextElement(205);
+                                        ImGui::PushID(225);
+                                        if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->type_index].c_str())) {
+                                            for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                                                if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->type_index)) {
+                                                    open_tabs[i].procedure->type_index = k;
+                                                }
+                                            }
+                                            ImGui::EndCombo();
+                                        }
+                                        ImGui::PopID();
+                                    }
+                                    ImGui::PopID();
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure color:");
+                                    NextElement(205);
+                                    ImGui::ColorEdit4(" ", cols);
+                                    open_tabs[i].procedure->color = { cols[0], cols[1], cols[2], cols[3] };
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure category: ");
+                                    NextElement(205);
+                                    ImGui::PushID(2);
+                                    if (open_tabs[i].procedure->category > 22) {
+                                        if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].procedure->category_name) == loaded_plugin.data.filenames.end()) {
+                                            open_tabs[i].procedure->category = 0;
+                                            open_tabs[i].procedure->category_name = categories[0];
+                                        }
+                                    }
+                                    if (ImGui::BeginCombo(" ", categories[open_tabs[i].procedure->category].c_str())) {
+                                        for (int j = 0; j < categories.size(); j++) {
+                                            if (ImGui::Selectable(categories[j].c_str(), open_tabs[i].procedure->category == j)) {
+                                                open_tabs[i].procedure->category = j;
+                                                open_tabs[i].procedure->category_name = categories[j];
                                             }
                                         }
                                         ImGui::EndCombo();
                                     }
                                     ImGui::PopID();
-                                }
-                                ImGui::PopID();
-                                ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure color:");
-                                NextElement(205);
-                                ImGui::ColorEdit4(" ", cols);
-                                open_tabs[i].procedure->color = { cols[0], cols[1], cols[2], cols[3] };
-                                ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure category: ");
-                                NextElement(205);
-                                ImGui::PushID(2);
-                                if (open_tabs[i].procedure->category > 22) {
-                                    if (std::find(loaded_plugin.data.filenames.begin(), loaded_plugin.data.filenames.end(), open_tabs[i].procedure->category_name) == loaded_plugin.data.filenames.end()) {
-                                        open_tabs[i].procedure->category = 0;
-                                        open_tabs[i].procedure->category_name = categories[0];
+                                    ImGui::PushID(772);
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure translation key:");
+                                    NextElement(205);
+                                    ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
+                                    ImGui::PopID();
+                                    ImGui::Checkbox("Requires world dependency", &open_tabs[i].procedure->world_dependency);
+                                    ImGui::PushID(2394);
+                                    ImGui::Checkbox("Requires an external API", &open_tabs[i].procedure->requires_api);
+                                    ImGui::PopID();
+                                    if (open_tabs[i].procedure->requires_api) {
+                                        ImGui::AlignTextToFramePadding();
+                                        ImGui::Text("API name:");
+                                        NextElement(205);
+                                        ImGui::PushID(2838);
+                                        ImGui::InputText(" ", &open_tabs[i].procedure->api_name);
+                                        ImGui::PopID();
                                     }
-                                }
-                                if (ImGui::BeginCombo(" ", categories[open_tabs[i].procedure->category].c_str())) {
-                                    for (int j = 0; j < categories.size(); j++) {
-                                        if (ImGui::Selectable(categories[j].c_str(), open_tabs[i].procedure->category == j)) {
-                                            open_tabs[i].procedure->category = j;
-                                            open_tabs[i].procedure->category_name = categories[j];
+                                    ImGui::PushID(2395);
+                                    ImGui::Checkbox("Uses a mutator", &open_tabs[i].procedure->has_mutator);
+                                    ImGui::PopID();
+                                    if (open_tabs[i].procedure->has_mutator) {
+                                        ImGui::AlignTextToFramePadding();
+                                        ImGui::Text("Mutator name:");
+                                        NextElement(205);
+                                        ImGui::PushID(2839);
+                                        ImGui::InputText(" ", &open_tabs[i].procedure->mutator);
+                                        ImGui::PopID();
+                                    }
+                                    ImGui::PushID(2395);
+                                    ImGui::Checkbox("Code manually", &open_tabs[i].procedure->manual_code);
+                                    ImGui::PopID();
+                                    ImGui::EndChild();
+                                    ImGui::Spacing();
+                                    ImGui::Spacing();
+                                    ImGui::Text("Procedure block components");
+                                    if (ImGui::BeginTabBar("args", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
+                                        if (ImGui::TabItemButton("+")) {
+                                            addcomp = true;
                                         }
-                                    }
-                                    ImGui::EndCombo();
-                                }
-                                ImGui::PopID();
-                                ImGui::PushID(772);
-                                ImGui::AlignTextToFramePadding();
-                                ImGui::Text("Procedure translation key:");
-                                NextElement(205);
-                                ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
-                                ImGui::PopID();
-                                ImGui::Checkbox("Requires world dependency", &open_tabs[i].procedure->world_dependency);
-                                ImGui::PushID(2394);
-                                ImGui::Checkbox("Requires an external API", &open_tabs[i].procedure->requires_api);
-                                ImGui::PopID();
-                                if (open_tabs[i].procedure->requires_api) {
-                                    ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("API name:");
-                                    NextElement(205);
-                                    ImGui::PushID(2838);
-                                    ImGui::InputText(" ", &open_tabs[i].procedure->api_name);
-                                    ImGui::PopID();
-                                }
-                                ImGui::PushID(2395);
-                                ImGui::Checkbox("Uses a mutator", &open_tabs[i].procedure->has_mutator);
-                                ImGui::PopID();
-                                if (open_tabs[i].procedure->has_mutator) {
-                                    ImGui::AlignTextToFramePadding();
-                                    ImGui::Text("Mutator name:");
-                                    NextElement(205);
-                                    ImGui::PushID(2839);
-                                    ImGui::InputText(" ", &open_tabs[i].procedure->mutator);
-                                    ImGui::PopID();
-                                }
-                                ImGui::EndChild();
-                                ImGui::Spacing();
-                                ImGui::Spacing();
-                                ImGui::Text("Procedure block components");
-                                if (ImGui::BeginTabBar("args", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
-                                    if (ImGui::TabItemButton("+")) {
-                                        addcomp = true;
-                                    }
-                                    for (int j = 0; j < open_tabs[i].procedure->components.size() && !open_tabs[i].procedure->components.empty(); j++) {
-                                        if (ImGui::BeginTabItem(open_tabs[i].procedure->components[j].name.c_str(), &open_tabs[i].procedure->components[j].open)) {
-                                            ImGui::Spacing();
-                                            ImGui::AlignTextToFramePadding();
-                                            ImGui::Text("Component name: ");
-                                            ImGui::SameLine();
-                                            ImGui::InputText(" ", &open_tabs[i].procedure->components[j].name, ImGuiInputTextFlags_CharsNoBlank);
-                                            ImGui::AlignTextToFramePadding();
-                                            ImGui::Text("Component type: ");
-                                            ImGui::SameLine();
-                                            ImGui::PushID(56);
-                                            ImGui::Combo(" ", &open_tabs[i].procedure->components[j].type_int, "Input value\0Field input\0Field checkbox\0Field dropdown\0Datalist selector\0Input statement\0Dummy input\0Field image\0");
-                                            ImGui::PopID();
-                                            switch (open_tabs[i].procedure->components[j].type_int) {
-                                            case 0:
+                                        for (int j = 0; j < open_tabs[i].procedure->components.size() && !open_tabs[i].procedure->components.empty(); j++) {
+                                            if (ImGui::BeginTabItem(open_tabs[i].procedure->components[j].name.c_str(), &open_tabs[i].procedure->components[j].open)) {
+                                                ImGui::Spacing();
                                                 ImGui::AlignTextToFramePadding();
-                                                ImGui::Text("Value type: ");
+                                                ImGui::Text("Component name: ");
                                                 ImGui::SameLine();
-                                                ImGui::PushID(2);
-                                                if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->components[j].value_int].c_str())) {
-                                                    for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
-                                                        if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->components[j].value_int)) {
-                                                            open_tabs[i].procedure->components[j].value_int = k;
-                                                            open_tabs[i].procedure->components[j].component_value = loaded_plugin.VariableTypes[k];
-                                                        }
-                                                    }
-                                                    ImGui::EndCombo();
-                                                }
-                                                ImGui::PopID();
-                                                if (open_tabs[i].procedure->components[j].value_int == 4) {
-                                                    ImGui::PushID(88);
-                                                    ImGui::AlignTextToFramePadding();
-                                                    ImGui::Text("Boolean default value: ");
-                                                    ImGui::SameLine();
-                                                    ImGui::Combo(" ", &open_tabs[i].procedure->components[j].boolean_checked, "True\0False");
-                                                    ImGui::PopID();
-                                                }
-                                                else if (open_tabs[i].procedure->components[j].value_int == 5) {
-                                                    ImGui::PushID(88);
-                                                    ImGui::AlignTextToFramePadding();
-                                                    ImGui::Text("Number default value: ");
-                                                    ImGui::SameLine();
-                                                    ImGui::InputFloat(" ", &open_tabs[i].procedure->components[j].number_default, 0.1);
-                                                    ImGui::PopID();
-                                                }
-                                                else if (open_tabs[i].procedure->components[j].value_int == 6) {
-                                                    ImGui::PushID(88);
-                                                    ImGui::AlignTextToFramePadding();
-                                                    ImGui::Text("Text default value: ");
-                                                    ImGui::SameLine();
-                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].text_default);
-                                                    ImGui::PopID();
-                                                }
-                                                break;
-                                            case 1:
-                                                ImGui::PushID(28384);
-                                                ImGui::Checkbox("Has default text", &open_tabs[i].procedure->components[j].input_hastext);
-                                                ImGui::PopID();
-                                                if (open_tabs[i].procedure->components[j].input_hastext) {
-                                                    ImGui::AlignTextToFramePadding();
-                                                    ImGui::Text("Field default text: ");
-                                                    ImGui::SameLine();
-                                                    ImGui::PushID(6345);
-                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].input_text);
-                                                    ImGui::PopID();
-                                                }
-                                                break;
-                                            case 6:
-                                                break;
-                                            case 2:
-                                                ImGui::Checkbox("Is checked by default", &open_tabs[i].procedure->components[j].checkbox_checked);
-                                                break;
-                                            case 3:
-                                                if (ImGui::Button("Add option")) {
-                                                    open_tabs[i].procedure->components[j].dropdown_options.push_back("");
-                                                }
-                                                ImGui::SameLine();
-                                                if (ImGui::Button("Remove option") && !open_tabs[i].procedure->components[j].dropdown_options.empty()) {
-                                                    open_tabs[i].procedure->components[j].dropdown_options.pop_back();
-                                                }
-                                                for (int f = 0; f < open_tabs[i].procedure->components[j].dropdown_options.size(); f++) {
-                                                    ImGui::PushID(f + 2);
-                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].dropdown_options[f]);
-                                                    ImGui::PopID();
-                                                }
-                                                break;
-                                            case 4:
+                                                ImGui::InputText(" ", &open_tabs[i].procedure->components[j].name, ImGuiInputTextFlags_CharsNoBlank);
                                                 ImGui::AlignTextToFramePadding();
-                                                ImGui::Text("Datalist name: ");
+                                                ImGui::Text("Component type: ");
                                                 ImGui::SameLine();
-                                                ImGui::PushID(3);
-                                                ImGui::InputText(" ", &open_tabs[i].procedure->components[j].datalist);
+                                                ImGui::PushID(56);
+                                                ImGui::Combo(" ", &open_tabs[i].procedure->components[j].type_int, "Input value\0Field input\0Field checkbox\0Field dropdown\0Datalist selector\0Input statement\0Dummy input\0Field image\0");
                                                 ImGui::PopID();
-                                                ImGui::PushID(4);
-                                                ImGui::Checkbox("Use a custom entry provider", &open_tabs[i].procedure->components[j].entry_provider);
-                                                ImGui::PopID();
-                                                if (open_tabs[i].procedure->components[j].entry_provider) {
-                                                    ImGui::AlignTextToFramePadding();
-                                                    ImGui::Text("Custom entry provider: ");
-                                                    ImGui::SameLine();
-                                                    ImGui::PushID(5);
-                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].provider_name, ImGuiInputTextFlags_CharsNoBlank);
-                                                    ImGui::PopID();
-                                                }
-                                                break;
-                                            case 5:
-                                                ImGui::Checkbox("Disable local variables in statement", &open_tabs[i].procedure->components[j].disable_localvars);
-                                                break;
-                                            case 7:
-                                                ImGui::AlignTextToFramePadding();
-                                                ImGui::Text("Image source: ");
-                                                ImGui::SameLine();
-                                                ImGui::PushID(3883);
-                                                ImGui::InputText(" ", &open_tabs[i].procedure->components[j].source);
-                                                ImGui::PopID();
-                                                ImGui::AlignTextToFramePadding();
-                                                ImGui::Text("Image width: ");
-                                                ImGui::SameLine();
-                                                ImGui::PushID(3881);
-                                                ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].width);
-                                                ImGui::PopID();
-                                                ImGui::AlignTextToFramePadding();
-                                                ImGui::Text("Image height: ");
-                                                ImGui::SameLine();
-                                                ImGui::PushID(3880);
-                                                ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].height);
-                                                ImGui::PopID();
-                                                break;
-                                            }
-                                            std::string index_str = "Translation key index: %%" + std::to_string(j + 1);
-                                            ImGui::Text(index_str.c_str());
-                                            if (ImGui::Button("Copy component code")) {
-                                                std::string ccode;
                                                 switch (open_tabs[i].procedure->components[j].type_int) {
                                                 case 0:
-                                                    ccode = "${input$" + open_tabs[i].procedure->components[j].name + "}";
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Value type: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::PushID(2);
+                                                    if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].procedure->components[j].value_int].c_str())) {
+                                                        for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                                                            if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].procedure->components[j].value_int)) {
+                                                                open_tabs[i].procedure->components[j].value_int = k;
+                                                                open_tabs[i].procedure->components[j].component_value = loaded_plugin.VariableTypes[k];
+                                                            }
+                                                        }
+                                                        ImGui::EndCombo();
+                                                    }
+                                                    ImGui::PopID();
+                                                    if (open_tabs[i].procedure->components[j].value_int == 4) {
+                                                        ImGui::PushID(88);
+                                                        ImGui::AlignTextToFramePadding();
+                                                        ImGui::Text("Boolean default value: ");
+                                                        ImGui::SameLine();
+                                                        ImGui::Combo(" ", &open_tabs[i].procedure->components[j].boolean_checked, "True\0False");
+                                                        ImGui::PopID();
+                                                    }
+                                                    else if (open_tabs[i].procedure->components[j].value_int == 5) {
+                                                        ImGui::PushID(88);
+                                                        ImGui::AlignTextToFramePadding();
+                                                        ImGui::Text("Number default value: ");
+                                                        ImGui::SameLine();
+                                                        ImGui::InputFloat(" ", &open_tabs[i].procedure->components[j].number_default, 0.1);
+                                                        ImGui::PopID();
+                                                    }
+                                                    else if (open_tabs[i].procedure->components[j].value_int == 6) {
+                                                        ImGui::PushID(88);
+                                                        ImGui::AlignTextToFramePadding();
+                                                        ImGui::Text("Text default value: ");
+                                                        ImGui::SameLine();
+                                                        ImGui::InputText(" ", &open_tabs[i].procedure->components[j].text_default);
+                                                        ImGui::PopID();
+                                                    }
                                                     break;
                                                 case 1:
-                                                case 2:
-                                                case 3:
-                                                case 4:
-                                                    ccode = "${field$" + open_tabs[i].procedure->components[j].name + "}";
-                                                    break;
-                                                case 5:
-                                                    ccode = "${statement$" + open_tabs[i].procedure->components[j].name + "}";
+                                                    ImGui::PushID(28384);
+                                                    ImGui::Checkbox("Has default text", &open_tabs[i].procedure->components[j].input_hastext);
+                                                    ImGui::PopID();
+                                                    if (open_tabs[i].procedure->components[j].input_hastext) {
+                                                        ImGui::AlignTextToFramePadding();
+                                                        ImGui::Text("Field default text: ");
+                                                        ImGui::SameLine();
+                                                        ImGui::PushID(6345);
+                                                        ImGui::InputText(" ", &open_tabs[i].procedure->components[j].input_text);
+                                                        ImGui::PopID();
+                                                    }
                                                     break;
                                                 case 6:
+                                                    break;
+                                                case 2:
+                                                    ImGui::Checkbox("Is checked by default", &open_tabs[i].procedure->components[j].checkbox_checked);
+                                                    break;
+                                                case 3:
+                                                    if (ImGui::Button("Add option")) {
+                                                        open_tabs[i].procedure->components[j].dropdown_options.push_back("");
+                                                    }
+                                                    ImGui::SameLine();
+                                                    if (ImGui::Button("Remove option") && !open_tabs[i].procedure->components[j].dropdown_options.empty()) {
+                                                        open_tabs[i].procedure->components[j].dropdown_options.pop_back();
+                                                    }
+                                                    for (int f = 0; f < open_tabs[i].procedure->components[j].dropdown_options.size(); f++) {
+                                                        ImGui::PushID(f + 2);
+                                                        ImGui::InputText(" ", &open_tabs[i].procedure->components[j].dropdown_options[f]);
+                                                        ImGui::PopID();
+                                                    }
+                                                    break;
+                                                case 4:
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Datalist name: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::PushID(3);
+                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].datalist);
+                                                    ImGui::PopID();
+                                                    ImGui::PushID(4);
+                                                    ImGui::Checkbox("Use a custom entry provider", &open_tabs[i].procedure->components[j].entry_provider);
+                                                    ImGui::PopID();
+                                                    if (open_tabs[i].procedure->components[j].entry_provider) {
+                                                        ImGui::AlignTextToFramePadding();
+                                                        ImGui::Text("Custom entry provider: ");
+                                                        ImGui::SameLine();
+                                                        ImGui::PushID(5);
+                                                        ImGui::InputText(" ", &open_tabs[i].procedure->components[j].provider_name, ImGuiInputTextFlags_CharsNoBlank);
+                                                        ImGui::PopID();
+                                                    }
+                                                    break;
+                                                case 5:
+                                                    ImGui::Checkbox("Disable local variables in statement", &open_tabs[i].procedure->components[j].disable_localvars);
+                                                    break;
                                                 case 7:
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Image source: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::PushID(3883);
+                                                    ImGui::InputText(" ", &open_tabs[i].procedure->components[j].source);
+                                                    ImGui::PopID();
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Image width: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::PushID(3881);
+                                                    ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].width);
+                                                    ImGui::PopID();
+                                                    ImGui::AlignTextToFramePadding();
+                                                    ImGui::Text("Image height: ");
+                                                    ImGui::SameLine();
+                                                    ImGui::PushID(3880);
+                                                    ImGui::InputInt(" ", &open_tabs[i].procedure->components[j].height);
+                                                    ImGui::PopID();
                                                     break;
                                                 }
-                                                if (open_tabs[i].procedure->components[j].type_int != 6 && open_tabs[i].procedure->components[j].type_int != 7)
-                                                    SetClipboardText(ccode.c_str());
+                                                std::string index_str = "Translation key index: %%" + std::to_string(j + 1);
+                                                ImGui::Text(index_str.c_str());
+                                                if (ImGui::Button("Copy component code")) {
+                                                    std::string ccode;
+                                                    switch (open_tabs[i].procedure->components[j].type_int) {
+                                                    case 0:
+                                                        ccode = "${input$" + open_tabs[i].procedure->components[j].name + "}";
+                                                        break;
+                                                    case 1:
+                                                    case 2:
+                                                    case 3:
+                                                    case 4:
+                                                        ccode = "${field$" + open_tabs[i].procedure->components[j].name + "}";
+                                                        break;
+                                                    case 5:
+                                                        ccode = "${statement$" + open_tabs[i].procedure->components[j].name + "}";
+                                                        break;
+                                                    case 6:
+                                                    case 7:
+                                                        break;
+                                                    }
+                                                    if (open_tabs[i].procedure->components[j].type_int != 6 && open_tabs[i].procedure->components[j].type_int != 7)
+                                                        SetClipboardText(ccode.c_str());
+                                                }
+                                                ImGui::EndTabItem();
+                                            } // check if closed
+                                            for (int u = 0; u < open_tabs[i].procedure->components.size(); u++) {
+                                                if (!open_tabs[i].procedure->components[u].open)
+                                                    open_tabs[i].procedure->components.erase(open_tabs[i].procedure->components.begin() + u);
                                             }
-                                            ImGui::EndTabItem();
-                                        } // check if closed
-                                        for (int u = 0; u < open_tabs[i].procedure->components.size(); u++) {
-                                            if (!open_tabs[i].procedure->components[u].open)
-                                                open_tabs[i].procedure->components.erase(open_tabs[i].procedure->components.begin() + u);
                                         }
+                                        ImGui::EndTabBar();
                                     }
-                                    ImGui::EndTabBar();
+                                    ImGui::Spacing(); ImGui::Spacing();
+
                                 }
-                                ImGui::Spacing(); ImGui::Spacing();
+                                else {
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure name:");
+                                    NextElement(205);
+                                    ImGui::InputText(" ", &open_tab_names[i], ImGuiInputTextFlags_ReadOnly);
+
+                                    ImGui::AlignTextToFramePadding();
+                                    ImGui::Text("Procedure translation key:");
+                                    NextElement(205);
+                                    ImGui::PushID(772);
+                                    ImGui::InputText(" ", &open_tabs[i].procedure->translationkey);
+                                    ImGui::PopID();
+
+                                    ImGui::Checkbox("Code manually", &open_tabs[i].procedure->manual_code);
+                                    ImGui::Spacing();
+
+                                    ImGui::Text("Json template");
+                                    ImGui::PushID(3);
+                                    ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->manual_json , { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
+                                    ImGui::PopID();
+                                    ImGui::Spacing();
+                                }
+
                                 ImGui::Text("Templates");
                                 if (ImGui::BeginTabBar("procedure_templates", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
                                     if (ImGui::TabItemButton("+")) {
@@ -5915,12 +5979,13 @@ int main() {
                                     for (int l = 0; l < open_tabs[i].procedure->versions.size() && !open_tabs[i].procedure->versions.empty(); l++) {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
-                                            current_version = l + i;
-                                            if (current_version != old_current_version)
+                                            current_version = l + sumOfString(open_tabs[i].procedure->name);
+                                            if (current_version != old_current_version )
                                                 procedure_editor.SetText(open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]]);
                                             procedure_editor.Render((tabname_pc + std::to_string(i)).c_str(), false, { ImGui::GetColumnWidth(), 400 }, true);
-                                            open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] = procedure_editor.GetText();
-                                            old_current_version = l + i;
+                                            if (open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] != procedure_editor.GetText())
+                                                open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] = procedure_editor.GetText();
+                                            old_current_version = current_version;
                                             ImGui::EndTabItem();
                                         }
                                     }

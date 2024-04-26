@@ -1,28 +1,9 @@
 {
   "name": "wagw",
-  "type": 0,
-  "color": [
-    1.0,
-    1.0,
-    1.0,
-    1.0
-  ],
-  "category": "Block data",
-  "category_index": 0,
   "translation_key": "waf",
-  "world_dependency": true,
+  "json": "{\n BRUHH!!!!\n}",
   "versions": [
     "1.19.2_Forge",
     "1.19.4_Forge"
-  ],
-  "components": {
-    "eshes": {
-      "type": 3,
-      "dropdown_options": [
-        "sehes",
-        "heshjsehj",
-        "sjsejh"
-      ]
-    }
-  }
+  ]
 }

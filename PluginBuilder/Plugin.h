@@ -84,6 +84,8 @@ public:
 		std::string api_name;
 		bool has_mutator = false;
 		std::string mutator;
+		bool manual_code = false;
+		std::string manual_json = "";
 	};
 
 	struct GlobalTrigger {

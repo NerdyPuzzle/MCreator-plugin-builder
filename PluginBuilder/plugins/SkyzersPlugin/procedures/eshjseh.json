@@ -1,5 +1,6 @@
 {
   "name": "eshjseh",
+  "translation_key": "awshgwa",
   "type": 0,
   "color": [
     0.8823530077934265,
@@ -9,7 +10,6 @@
   ],
   "category": "World scoreboard (2023.4+)",
   "category_index": 22,
-  "translation_key": "awshgwa",
   "world_dependency": false,
   "mutator": "test"
 }
