@@ -1,0 +1,3 @@
+if (event instanceof LivingHurtEvent _hurt) {
+	_hurt.setAmount(${opt.toFloat(input$dmg)});
+}

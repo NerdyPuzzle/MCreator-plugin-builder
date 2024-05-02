@@ -1,0 +1,13 @@
+{
+  "name": "On anvil updated",
+  "cancelable": true,
+  "side": 1,
+  "versions": {
+    "1.20.1_Forge": {
+      "event": "AnvilUpdateEvent"
+    },
+    "1.20.4_NeoForge": {
+      "event": "AnvilUpdateEvent"
+    }
+  }
+}

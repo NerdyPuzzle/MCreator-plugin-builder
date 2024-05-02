@@ -1,0 +1,31 @@
+{
+  "name": "Entity line of sight check",
+  "translation_key": "Can %1 find %2",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.5019609928131104,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": false,
+  "type_index": 4,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    },
+    "sourceentity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    }
+  }
+}

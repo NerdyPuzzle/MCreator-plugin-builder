@@ -86,6 +86,7 @@ public:
 		std::string mutator;
 		bool manual_code = false;
 		std::string manual_json = "";
+		bool is_custom_loop = false;
 	};
 
 	struct GlobalTrigger {
@@ -153,6 +154,17 @@ public:
 		int variable_int = 0;
 		ImVec4 color;
 		std::string name;
+	};
+
+	struct Variable {
+		std::string name;
+
+		std::vector<std::pair<std::string, std::string>> versions; // version, generator
+		std::vector<std::string> version_names;
+
+		std::map<std::pair<std::string, std::string>, std::pair<std::string, std::string>> mappings; // give a version to get a pair of class name, default value 
+
+		ImVec4 color;
 	};
 
 	static enum WidgetType {
@@ -243,6 +255,7 @@ private:
 		std::vector<Animation> animations;
 		std::vector<ModElement> modelements;
 		std::vector<Mutator> mutators;
+		std::vector<Variable> variables;
 		std::vector<TemplateOverride> overrides;
 		std::vector<std::string> filenames;
 	};

@@ -1,0 +1,3 @@
+if (event instanceof AnvilUpdateEvent _anvil) {
+	_anvil.setMaterialCost(${opt.toInt(input$cost)});
+}

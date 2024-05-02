@@ -1,0 +1,37 @@
+{
+  "name": "Entity execute command with perm level",
+  "translation_key": "Execute command / %1 in the name of %2 with permission level %3",
+  "type": 0,
+  "color": [
+    0.35686299204826355,
+    0.5764709711074829,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "command": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "clear"
+    },
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    },
+    "permlevel": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 4.0
+    }
+  }
+}

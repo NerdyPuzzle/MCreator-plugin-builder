@@ -1,0 +1,9 @@
+{
+  "name": "Text split foreach",
+  "translation_key": "For each text in %1 split by %2 as %4 do %3 (or whole text if array is empty)",
+  "json": "{\n  \"args0\": [\n    {\n      \"type\": \"input_value\",\n      \"name\": \"text\",\n      \"check\": \"String\"\n    },\n    {\n      \"type\": \"input_value\",\n      \"name\": \"2split\",\n      \"check\": \"String\"\n    },\n    {\n      \"type\": \"input_statement\",\n      \"name\": \"foreach\"\n    },\n    {\n      \"type\": \"input_value\",\n      \"name\": \"_placeholder\",\n      \"check\": \"String\"\n    }\n  ],\n  \"extensions\": [\n    \"is_custom_loop\"\n  ],\n  \"inputsInline\": true,\n  \"previousStatement\": null,\n  \"nextStatement\": null,\n  \"colour\": \"#5ba58c\",\n  \"mcreator\": {\n    \"toolbox_id\": \"actions\",\n    \"toolbox_init\": [\n      \"<value name=\\\"text\\\"><block type=\\\"text\\\"><field name=\\\"TEXT\\\">text1,text2</field></block></value>\",\n      \"<value name=\\\"2split\\\"><block type=\\\"text\\\"><field name=\\\"TEXT\\\">,</field></block></value>\",\n      \"<value name=\\\"_placeholder\\\"><block deletable=\\\"false\\\" movable=\\\"false\\\" enabled=\\\"false\\\" type=\\\"stringiterator\\\"></block></value>\"\n    ],\n    \"inputs\": [\n      \"text\",\n      \"2split\"\n    ],\n    \"statements\": [\n      {\n        \"name\": \"foreach\",\n        \"disable_local_variables\": false\n      }\n    ]\n  }\n}",
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ]
+}

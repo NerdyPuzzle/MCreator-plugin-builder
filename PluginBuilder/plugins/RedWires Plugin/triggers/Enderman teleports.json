@@ -1,0 +1,52 @@
+{
+  "name": "Enderman teleports",
+  "cancelable": true,
+  "side": 0,
+  "provided_dependencies": [
+    "X",
+    "Y",
+    "Z",
+    "ENTITY",
+    "WORLD",
+    "prevX",
+    "prevY",
+    "prevZ",
+    "gesjhddz",
+    "guluhl"
+  ],
+  "custom_dependency_types": [
+    "Number",
+    "Number",
+    "Number",
+    "Block",
+    "Block"
+  ],
+  "versions": {
+    "1.20.1_Forge": {
+      "event": "EntityTeleportEvent.EnderEntity",
+      "X": "getTargetX()",
+      "Y": "getTargetY()",
+      "Z": "getTargetZ()",
+      "ENTITY": "getEntity()",
+      "WORLD": "getEntity().level()",
+      "prevX": "getPrevX()",
+      "prevY": "getPrevY()",
+      "prevZ": "getPrevZ()",
+      "gesjhddz": "",
+      "guluhl": ""
+    },
+    "1.20.4_NeoForge": {
+      "event": "EntityTeleportEvent.EnderEntity",
+      "X": "getTargetX()",
+      "Y": "getTargetY()",
+      "Z": "getTargetZ()",
+      "ENTITY": "getEntity()",
+      "WORLD": "getEntity().level()",
+      "prevX": "getPrevX()",
+      "prevY": "getPrevY()",
+      "prevZ": "getPrevZ()",
+      "gesjhddz": "",
+      "guluhl": ""
+    }
+  }
+}

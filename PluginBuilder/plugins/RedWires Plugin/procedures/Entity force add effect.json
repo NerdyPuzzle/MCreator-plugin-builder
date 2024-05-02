@@ -1,0 +1,60 @@
+{
+  "name": "Entity force add effect",
+  "translation_key": "FORCE-add potion %1 with level %2 for %3 ticks ambient %4 particles %5 to %6 %7",
+  "type": 0,
+  "color": [
+    0.35686299204826355,
+    0.5764709711074829,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "potion": {
+      "type": 4,
+      "datalist": "effects",
+      "entry_provider": "potioneffect"
+    },
+    "level": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 1.0
+    },
+    "duration": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 60.0
+    },
+    "ambient": {
+      "type": 0,
+      "variable_type": "Boolean",
+      "variable_index": 4,
+      "default_value": 1
+    },
+    "particles": {
+      "type": 0,
+      "variable_type": "Boolean",
+      "variable_index": 4,
+      "default_value": 1
+    },
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    },
+    "fieldimg": {
+      "type": 7,
+      "source": "./res/server.png",
+      "width": 8,
+      "height": 24
+    }
+  }
+}

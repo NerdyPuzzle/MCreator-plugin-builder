@@ -1,0 +1,25 @@
+{
+  "name": "Timed loop iterator",
+  "translation_key": "Timed loop iterator (start from 0: %1)",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.4039219915866852,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": false,
+  "type_index": 5,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "startfromzero": {
+      "type": 2,
+      "checked": false
+    }
+  }
+}

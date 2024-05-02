@@ -1,0 +1,25 @@
+{
+  "name": "Untame entity",
+  "translation_key": "Un-tame %1",
+  "type": 0,
+  "color": [
+    0.35686299204826355,
+    0.5764709711074829,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    }
+  }
+}

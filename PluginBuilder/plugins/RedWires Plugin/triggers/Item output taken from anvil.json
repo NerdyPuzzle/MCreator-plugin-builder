@@ -1,0 +1,48 @@
+{
+  "name": "Item output taken from anvil",
+  "cancelable": false,
+  "side": 0,
+  "provided_dependencies": [
+    "X",
+    "Y",
+    "Z",
+    "ENTITY",
+    "WORLD",
+    "leftItem",
+    "rightItem",
+    "output",
+    "breakChance"
+  ],
+  "custom_dependency_types": [
+    "Item",
+    "Item",
+    "Item",
+    "Number"
+  ],
+  "versions": {
+    "1.20.1_Forge": {
+      "event": "AnvilRepairEvent",
+      "X": "getEntity().getX()",
+      "Y": "getEntity().getY()",
+      "Z": "getEntity().getZ()",
+      "ENTITY": "getEntity()",
+      "WORLD": "getEntity().level()",
+      "leftItem": "getLeft()",
+      "rightItem": "getRight()",
+      "output": "getOutput()",
+      "breakChance": "getBreakChance()"
+    },
+    "1.20.4_NeoForge": {
+      "event": "AnvilRepairEvent",
+      "X": "getEntity().getX()",
+      "Y": "getEntity().getY()",
+      "Z": "getEntity().getZ()",
+      "ENTITY": "getEntity()",
+      "WORLD": "getEntity().level()",
+      "leftItem": "getLeft()",
+      "rightItem": "getRight()",
+      "output": "getOutput()",
+      "breakChance": "getBreakChance()"
+    }
+  }
+}

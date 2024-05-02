@@ -1,0 +1,6 @@
+{
+String[] array = ${input$text}.split(${input$2split});
+	for (String stringiterator : array) {
+		${statement$foreach}
+ 	}
+}

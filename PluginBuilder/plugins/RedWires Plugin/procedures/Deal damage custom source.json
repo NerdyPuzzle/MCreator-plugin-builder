@@ -1,0 +1,42 @@
+{
+  "name": "Deal damage custom source",
+  "translation_key": "Deal %1 custom damage to %2 localized as %3(.player/.item) with custom source %4",
+  "type": 0,
+  "color": [
+    0.35686299204826355,
+    0.5764709711074829,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "amount": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 1.0
+    },
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    },
+    "text": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "death.attack.generic"
+    },
+    "damagesource": {
+      "type": 0,
+      "variable_type": "DamageSource",
+      "variable_index": 7
+    }
+  }
+}

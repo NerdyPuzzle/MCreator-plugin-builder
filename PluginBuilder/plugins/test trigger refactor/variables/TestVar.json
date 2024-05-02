@@ -1,0 +1,14 @@
+{
+  "name": "TestVar",
+  "color": [
+    0.8627451062202454,
+    0.1099577322602272,
+    0.1099577322602272
+  ],
+  "versions": {
+    "1.20.1_Forge": {
+      "class": "Object",
+      "default_value": "new Object()"
+    }
+  }
+}

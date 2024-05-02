@@ -1,0 +1,26 @@
+{
+  "name": "Set can harvest",
+  "translation_key": "Set canHarvest of block to %1 (Player harvest check tick)",
+  "type": 0,
+  "color": [
+    0.5019609928131104,
+    0.6470590233802795,
+    0.35686299204826355,
+    1.0
+  ],
+  "category": "Event-specific Actions",
+  "category_index": 25,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "result": {
+      "type": 0,
+      "variable_type": "Boolean",
+      "variable_index": 4,
+      "default_value": 0
+    }
+  }
+}

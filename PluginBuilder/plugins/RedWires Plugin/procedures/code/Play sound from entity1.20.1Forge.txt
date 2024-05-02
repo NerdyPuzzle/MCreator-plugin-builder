@@ -1,0 +1,12 @@
+<#include "mcelements.ftl">
+<#assign sound = generator.map(field$sound, "sounds")?replace("CUSTOM:", "${modid}:")>
+<#if sound?has_content>
+if (world instanceof Level _level) {
+	if (!_level.isClientSide()) {
+		Entity _ent = ${input$entity};
+		_level.playSound(_ent, BlockPos.containing(_ent.getX(), _ent.getY(), _ent.getZ()),
+	    	ForgeRegistries.SOUND_EVENTS.getValue(new ResourceLocation("${sound}")),
+			SoundSource.${generator.map(field$soundcategory!"neutral", "soundcategories")}, ${opt.toFloat(input$level)}, ${opt.toFloat(input$pitch)});
+	}
+}
+</#if>

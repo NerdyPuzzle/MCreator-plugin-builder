@@ -1,0 +1,29 @@
+{
+  "name": "Replace texture",
+  "translation_key": "Replace vanilla textuere from location %1 with texture from location %2",
+  "type": 0,
+  "color": [
+    0.4156862795352936,
+    0.3764705955982208,
+    0.22745098173618317,
+    1.0
+  ],
+  "category": "Block data",
+  "category_index": 0,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge"
+  ],
+  "components": {
+    "loc1": {
+      "type": 0,
+      "variable_type": "TestVar",
+      "variable_index": 8
+    },
+    "loc2": {
+      "type": 0,
+      "variable_type": "TestVar",
+      "variable_index": 8
+    }
+  }
+}

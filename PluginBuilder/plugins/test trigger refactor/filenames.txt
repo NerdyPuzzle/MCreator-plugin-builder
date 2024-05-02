@@ -1,4 +1,8 @@
 test
 testing
 example procedure
-wagw
+New resourcelocation
+Replace texture
+mutatortest
+TestVar
+wasgwas

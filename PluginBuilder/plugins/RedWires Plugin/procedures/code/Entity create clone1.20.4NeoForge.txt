@@ -1,0 +1,15 @@
+new Object() {
+	Entity createClone(Entity ent) {
+		Entity _clone = null;
+		if (world instanceof ServerLevel _level) {
+			Entity entityToSpawn = ent.getType().spawn(_level, BlockPos.containing(ent.getX(), ent.getY(), ent.getZ()), MobSpawnType.MOB_SUMMONED);
+			if (entityToSpawn != null) {
+				entityToSpawn.setYRot(world.getRandom().nextFloat() * 360F);
+				CompoundTag nbtdata = ent.saveWithoutId(new CompoundTag());
+				entityToSpawn.load(nbtdata);
+				_clone = entityToSpawn;
+			}
+		}
+		return _clone;
+	}
+}.createClone(${input$entity})

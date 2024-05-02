@@ -1,0 +1,11 @@
+new Object() {
+	Entity getEntity(String uuid) {
+		Entity _uuidentity = null;
+		if (world instanceof ServerLevel _server) {
+			try {
+				_uuidentity = _server.getEntity(UUIDTypeAdapter.fromString(uuid));
+			} catch (IllegalArgumentException e) {}
+		}
+		return _uuidentity;
+	}
+}.getEntity(${input$uuidstring})

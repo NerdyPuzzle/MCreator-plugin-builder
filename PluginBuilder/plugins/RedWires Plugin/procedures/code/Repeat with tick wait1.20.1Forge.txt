@@ -1,0 +1,15 @@
+new Object() {
+	void timedLoop(double current, double total, int ticks) {
+		boolean _stoploop = false;
+		${statement$foreach}
+		final boolean _stoploop2 = _stoploop;
+		final int tick2 = ticks;
+		<#-- @formatter:off -->
+		${JavaModName}.queueServerWork(tick2, () -> {
+			if (total > current+1 && !_stoploop2) {
+				timedLoop(current+1, total, tick2);
+			}
+		});
+		<#-- @formatter:on -->
+	}
+}.timedLoop(0, ${input$times}, ${opt.toInt(input$tickwait)});

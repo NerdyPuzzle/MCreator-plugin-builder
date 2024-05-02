@@ -1,0 +1,26 @@
+{
+  "name": "Change tick wait",
+  "translation_key": "Set wait ticks in timed loop to %1",
+  "type": 0,
+  "color": [
+    0.35686299204826355,
+    0.6470590233802795,
+    0.35686299204826355,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "ticks": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 1.0
+    }
+  }
+}

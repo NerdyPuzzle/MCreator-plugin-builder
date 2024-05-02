@@ -1,0 +1,27 @@
+{
+  "name": "Get entity from UUID",
+  "translation_key": "Get entity from UUID %1",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.5764709711074829,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": true,
+  "type_index": 2,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "uuidstring": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "UUID"
+    }
+  }
+}

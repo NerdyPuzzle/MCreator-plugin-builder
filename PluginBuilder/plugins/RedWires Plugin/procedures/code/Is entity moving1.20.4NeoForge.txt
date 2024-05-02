@@ -1,0 +1,1 @@
+(${input$entity}.getDeltaMovement().horizontalDistanceSqr() > 1.0E-6D)

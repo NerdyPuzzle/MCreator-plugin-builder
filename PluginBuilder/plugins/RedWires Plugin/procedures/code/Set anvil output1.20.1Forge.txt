@@ -1,0 +1,4 @@
+<#include "mcitems.ftl">
+if (event instanceof AnvilUpdateEvent _anvil) {
+	_anvil.setOutput(${mappedMCItemToItemStackCode(input$itemoutput, 1)});
+}

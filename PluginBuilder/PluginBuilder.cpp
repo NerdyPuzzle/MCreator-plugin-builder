@@ -53,6 +53,8 @@ std::vector<const char*> tempchars_apis;
 std::vector<const char*> tempchars_animations;
 std::vector<const char*> tempchars_modelements;
 std::vector<const char*> tempchars_mutators;
+std::vector<const char*> tempchars_variables;
+
 
 std::string file_name;
 std::string version_mc;
@@ -83,6 +85,8 @@ int delete_api = -1;
 int delete_animation = -1;
 int delete_modelement = -1;
 int delete_mutator = -1;
+int delete_variable = -1;
+
 int combo_item = 0;
 int generator_type = 0;
 int tabsize = 0;
@@ -98,7 +102,7 @@ bool delete_confirm = false;
 bool delete_set_pos = true;
 bool deletefile = false;
 bool deletefile_set_pos = true;
-bool active[9] = { false, false, false, false, false, false, false, false, false };
+bool active[10] = { false, false, false, false, false, false, false, false, false, false };
 bool addfile = false;
 bool addfile_set_pos = true;
 bool file_open = false;
@@ -146,7 +150,7 @@ std::vector<Plugin> plugins;
 Plugin loaded_plugin;
 
 float ParsedVersion = 0;
-float PBVersion = 1.6;
+float PBVersion = 1.8;
 bool new_version = false;
 bool old_version_warning = false;
 
@@ -362,7 +366,10 @@ void SavePlugin(const Plugin* plugin) {
                     version["event"] = gt.event_code.at(ver);
                     for (int i = 0; i < gt.provided_dependencies.size(); i++) {
                         if (gt.provided_dependencies[i].second) {
-                            version[gt.provided_dependencies[i].first] = gt.dependency_mappings.at(ver).at(gt.provided_dependencies[i].first);
+                            if (gt.dependency_mappings.at(ver).contains(gt.provided_dependencies[i].first))
+                                version[gt.provided_dependencies[i].first] = gt.dependency_mappings.at(ver).at(gt.provided_dependencies[i].first);
+                            else
+                                version[gt.provided_dependencies[i].first] = "";
                         }
                     }
                     versions[ver.first + '_' + ver.second] = version;
@@ -429,6 +436,7 @@ void SavePlugin(const Plugin* plugin) {
                 if (pc.type == 1) procedure["type_index"] = pc.type_index;
                 if (pc.requires_api) procedure["required_api"] = pc.api_name;
                 if (pc.has_mutator) procedure["mutator"] = pc.mutator;
+                if (pc.is_custom_loop) procedure["is_custom_loop"] = true;
             }
 
             std::vector<std::string> versions;
@@ -736,6 +744,34 @@ void SavePlugin(const Plugin* plugin) {
     else if (fs::exists(pluginpath + "mutators/"))
         fs::remove_all(pluginpath + "mutators/");
 
+    if (!plugin->data.variables.empty()) {
+        if (!fs::exists(pluginpath + "variables/"))
+            fs::create_directory(pluginpath + "variables/");
+        for (const Plugin::Variable var : plugin->data.variables) {
+            json variable;
+
+            variable["name"] = var.name;
+            variable["color"] = { var.color.x, var.color.y, var.color.z };
+
+            json versions;
+            for (const std::pair<std::string, std::string> ver : var.versions) {
+                json version;
+                version["class"] = var.mappings.at(ver).first;
+                version["default_value"] = var.mappings.at(ver).second;
+                versions[ver.first + '_' + ver.second] = version;
+            }
+
+            if (!versions.empty())
+                variable["versions"] = versions;
+            
+            std::ofstream variable_out(pluginpath + "variables/" + var.name + ".json");
+            variable_out << variable.dump(2);
+            variable_out.close();
+        }
+    }
+    else if (fs::exists(pluginpath + "variables/"))
+        fs::remove_all(pluginpath + "variables/");
+
 }
 Plugin LoadPlugin(std::string path) {
     Plugin plugin;
@@ -871,6 +907,7 @@ Plugin LoadPlugin(std::string path) {
 
                         std::vector<std::string> key_pair = splitString(it.key(), '_');
                         std::pair<std::string, std::string> ver = { key_pair.at(0), key_pair.at(1) };
+                        gt.version_names.push_back(ver.first + ver.second);
                         gt.versions.push_back(ver);
 
                         gt.event_code[ver] = version.at("event");
@@ -1116,6 +1153,7 @@ Plugin LoadPlugin(std::string path) {
                         pc.world_dependency = procedure.at("world_dependency");
 
                         if (pc.type == 1) pc.type_index = procedure.at("type_index");
+                        if (procedure.contains("is_custom_loop")) pc.is_custom_loop = true;
 
                         if (procedure.contains("required_api")) {
                             pc.requires_api = true;
@@ -1133,6 +1171,7 @@ Plugin LoadPlugin(std::string path) {
                         for (const std::string vers : versions) {
                             std::vector<std::string> versionpair = splitString(vers, '_');
                             std::pair<std::string, std::string> version = { versionpair.at(0), versionpair.at(1) };
+                            pc.version_names.push_back(version.first + version.second);
                             pc.versions.push_back(version);
                         }
                     }
@@ -1563,6 +1602,40 @@ Plugin LoadPlugin(std::string path) {
         }
     }
 
+    if (fs::exists(path + "variables/")) {
+        for (const fs::path entry : fs::directory_iterator(path + "variables/")) { // load new variable types
+            std::ifstream var_(entry.string());
+            json variable = json::parse(var_);
+            Plugin::Variable var;
+            var_.close();
+
+            var.name = variable.at("name");
+            
+            var.color.x = variable.at("color").at(0);
+            var.color.y = variable.at("color").at(1);
+            var.color.z = variable.at("color").at(2);
+            var.color.w = 1;
+
+            if (variable.contains("versions")) {
+                json versions = variable.at("versions");
+                for (json::iterator it = versions.begin(); it != versions.end(); it++) {
+                    json version = it.value();
+
+                    std::vector<std::string> key_pair = splitString(it.key(), '_');
+                    std::pair<std::string, std::string> ver = { key_pair.at(0), key_pair.at(1) };
+                    var.version_names.push_back(ver.first + ver.second);
+                    var.versions.push_back(ver);
+
+                    var.mappings[ver].first = version.at("class");
+                    var.mappings[ver].second = version.at("default_value");
+                }
+            }
+
+            plugin.VariableTypes.push_back(var.name);
+            plugin.data.variables.push_back(var);
+        }
+    }
+
     if (new_version || old_version_warning)
         ParsedVersion = PBVersion;
 
@@ -1958,6 +2031,8 @@ void ExportPlugin(const Plugin plugin) {
                                     pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_deps\\" << '"' << "></block></value>" << '"';
                                 else if (comp.component_value == "DamageSource" && comp.name != "provideddamagesource")
                                     pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "damagesource_from_type\\" << '"' << "><field name=\\" << '"' << "damagetype\\" << '"' << ">GENERIC</field></block></value>" << '"';
+                                else
+                                    pc_ << "      " << '"' << "<value name=\\" << '"' << comp.name << "\\" << '"' << "><block type=\\" << '"' << "variables_get_" << LowerStr(comp.component_value) << "\\\"><mutation xmlns=\\\"http://www.w3.org/1999/xhtml\\\" is_player_var=\\\"false\\\" has_entity=\\\"false\\\"></mutation><field name=\\\"VAR\\\"></field></block></value>\"";
                                 pc_ << (std::string)(i == inputs_size ? "\n" : ",\n");
                             }
                         }
@@ -2079,23 +2154,14 @@ void ExportPlugin(const Plugin plugin) {
                 case 0:
                     vartype = "MCItemBlock";
                     break;
-                case 1:
-                    vartype = "Direction";
-                    break;
-                case 2:
-                    vartype = "Entity";
-                    break;
                 case 3:
                     vartype = "MCItem";
                     break;
-                case 4:
-                    vartype = "Boolean";
-                    break;
-                case 5:
-                    vartype = "Number";
-                    break;
                 case 6:
                     vartype = "String";
+                    break;
+                default:
+                    vartype = plugin.VariableTypes.at(mt.variable_int);
                     break;
                 }
                 mt_ << vartype + "').setAlign(Blockly.Input.Align.RIGHT)\n";
@@ -2195,7 +2261,7 @@ void ExportPlugin(const Plugin plugin) {
                             break;
                         default: {
                             gt_ << "    {\n";
-                            gt_ << "      \"name\": \"" + LowerStr(gt.provided_dependencies[deps[i]].first) << "\",\n";
+                            gt_ << "      \"name\": \"" + gt.provided_dependencies[deps[i]].first << "\",\n";
                             std::string vartype = gt.custom_depependency_types.at(deps[i] - 12);
                             if (vartype == "Block")
                                 vartype = "blockstate";
@@ -2274,11 +2340,24 @@ void ExportPlugin(const Plugin plugin) {
                 zip.AddFile("temp_data\\" + tl.name + ".txt", "lang\\texts_" + tl.language + ".properties");
             }
         }
+        if (!plugin.data.variables.empty()) {
+            zip.AddFolder("variables");
+            for (const Plugin::Variable var : plugin.data.variables) {
+                std::ofstream var_("temp_data\\" + var.name + ".txt");
+                var_ << "{\n";
+                var_ << "  \"color\": \"" + ImVecToHex(var.color) + "\",\n";
+                var_ << "  \"blocklyVariableType\": \"" + var.name + "\"\n";
+                var_ << "}";
+                var_.close();
+                zip.AddFile("temp_data\\" + var.name + ".txt", "variables\\" + LowerStr(var.name) + ".json");
+            }
+        }
         std::vector<std::string> versions;
         std::vector<std::string> triggerversions;
         std::vector<std::string> procedureversions;
         std::vector<std::string> datalistversions;
         std::vector<std::string> elementversions;
+        std::vector<std::string> variableversions;
         if (!plugin.data.procedures.empty()) {
             for (const Plugin::Procedure pc : plugin.data.procedures) {
                 if (!pc.versions.empty()) {
@@ -2327,14 +2406,29 @@ void ExportPlugin(const Plugin plugin) {
                 }
             }
         }
+        if (!plugin.data.variables.empty()) {
+            for (const Plugin::Variable var: plugin.data.variables) {
+                if (!var.versions.empty()) {
+                    for (const std::pair<std::string, std::string> version : var.versions) {
+                        std::string version_str = RegistryName(version.second) + "-" + version.first;
+                        if (std::find(versions.begin(), versions.end(), version_str) == versions.end())
+                            versions.push_back(version_str);
+                        if (std::find(variableversions.begin(), variableversions.end(), version_str) == variableversions.end())
+                            variableversions.push_back(version_str);
+                    }
+                }
+            }
+        }
         for (const std::string vers : versions) {
             zip.AddFolder(vers);
             if (std::find(procedureversions.begin(), procedureversions.end(), vers) != procedureversions.end())
                 zip.AddFolder(vers + "\\procedures");
             if (std::find(triggerversions.begin(), triggerversions.end(), vers) != triggerversions.end())
                 zip.AddFolder(vers + "\\triggers");
-            if (std::find(datalistversions.begin(), datalistversions.end(), vers) != datalistversions.end())
+            if (std::find(datalistversions.begin(), datalistversions.end(), vers) != datalistversions.end() || std::find(variableversions.begin(), variableversions.end(), vers) != variableversions.end())
                 zip.AddFolder(vers + "\\mappings");
+            if (std::find(variableversions.begin(), variableversions.end(), vers) != variableversions.end())
+                zip.AddFolder(vers + "\\variables");
         }
         if (!plugin.data.procedures.empty()) {
             for (const Plugin::Procedure pc : plugin.data.procedures) {
@@ -2366,7 +2460,10 @@ void ExportPlugin(const Plugin plugin) {
                                     deps.push_back(i);
                             }
                             for (int i = 0; i < deps.size(); i++) {
-                                gt_ << "            \"" + LowerStr(gt.provided_dependencies[deps[i]].first) + "\": \"event." + gt.dependency_mappings.at(version).at(gt.provided_dependencies[deps[i]].first) + "\",\n";
+                                if (deps[i] <= 11)
+                                    gt_ << "            \"" + LowerStr(gt.provided_dependencies[deps[i]].first) + "\": \"event." + gt.dependency_mappings.at(version).at(gt.provided_dependencies[deps[i]].first) + "\",\n";
+                                else
+                                    gt_ << "            \"" + gt.provided_dependencies[deps[i]].first + "\": \"event." + gt.dependency_mappings.at(version).at(gt.provided_dependencies[deps[i]].first) + "\",\n";
                             }
                             gt_ << "            \"event\": \"event\"\n";
                             gt_ << "            }/>\n";
@@ -3078,6 +3175,52 @@ void ExportPlugin(const Plugin plugin) {
                 zip.AddFile("temp_data\\" + ovr.name, dir + ovr.name);
             }
         }
+        if (!plugin.data.variables.empty()) {
+            for (const std::string foldername : variableversions) {
+                std::ofstream vartypes("temp_data\\vartypes" + foldername + ".txt");
+
+                bool firstvar = true;
+                for (const Plugin::Variable var : plugin.data.variables) {
+                    if (!firstvar)
+                        vartypes << "\n";
+                    firstvar = false;
+
+                    std::vector<std::string> verpair = splitString(foldername, '-');
+                    verpair[0][0] = std::toupper(verpair.at(0).at(0));
+
+                    if (verpair.at(0) == "Neoforge")
+                        verpair[0][3] = std::toupper(verpair.at(0).at(3));
+
+                    std::pair<std::string, std::string> version = { verpair.at(1), verpair.at(0) };
+
+                    if (var.mappings.contains(version))
+                        vartypes << LowerStr(var.name) << ": " << var.mappings.at(version).first;
+                }
+
+                vartypes.close();
+                zip.AddFile("temp_data\\vartypes" + foldername + ".txt", foldername + "\\mappings\\types.yaml");
+            }
+            for (const Plugin::Variable var : plugin.data.variables) {
+                for (const std::pair<std::string, std::string> version : var.versions) {
+                    std::string foldername = RegistryName(version.second) + "-" + version.first;
+                    std::ofstream var_("temp_data\\" + var.name + version.first + version.second + ".txt");
+
+                    var_ << "defaultvalue: " + var.mappings.at(version).second + "\n";
+                    var_ << "scopes:\n";
+                    var_ << "  local:\n";
+                    var_ << "    init: ${var.getType().getJavaType(generator.getWorkspace())} ${var.getName()} = ${var.getType().getDefaultValue(generator.getWorkspace())};\n";
+                    var_ << "    get: ${name}\n";
+                    var_ << "    set: ${name} = ${opt.removeParentheses(value)};\n";
+                    var_ << "  global_session:\n";
+                    var_ << "    init: public static ${var.getType().getJavaType(generator.getWorkspace())} ${var.getName()} = ${var.getValue()};\n";
+                    var_ << "    get: ${JavaModName}Variables.${name}\n";
+                    var_ << "    set: ${JavaModName}Variables.${name} = ${opt.removeParentheses(value)};";
+
+                    var_.close();
+                    zip.AddFile("temp_data\\" + var.name + version.first + version.second + ".txt", foldername + "\\variables\\" + LowerStr(var.name) + ".yaml");
+                }
+            }
+        }
         lang.close();
         zip.AddFile("temp_data\\texts.properties", "lang\\texts.properties");
         zip.Close();
@@ -3090,7 +3233,7 @@ void ExportPlugin(const Plugin plugin) {
 
 // tab windows stuff
 enum WindowType {
-    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION, API, ANIMATION, MODELEMENT, MUTATOR
+    PROCEDURE, GLOBALTRIGGER, CATEGORY, DATALIST, TRANSLATION, API, ANIMATION, MODELEMENT, MUTATOR, VARIABLE
 };
 struct TabWindow {
     WindowType type;
@@ -3104,6 +3247,7 @@ struct TabWindow {
     Plugin::Animation* animation;
     Plugin::ModElement* modelement;
     Plugin::Mutator* mutator;
+    Plugin::Variable* variable;
 };
 std::vector<TabWindow> open_tabs;
 std::vector<std::string> open_tab_names;
@@ -3663,7 +3807,7 @@ int main() {
             if (deletefile) {
                 ImGui::OpenPopup("Delete file");
                 if (deletefile_set_pos) {
-                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 365) / 2 });
+                    ImGui::SetNextWindowPos({ (float)(GetScreenWidth() - 300) / 2, (float)(GetScreenHeight() - 435) / 2 });
                     for (int j = 0; j < loaded_plugin.data.procedures.size(); j++) {
                         tempchars_procedures.push_back(loaded_plugin.data.procedures[j].name.c_str());
                     }
@@ -3691,9 +3835,12 @@ int main() {
                     for (int j = 0; j < loaded_plugin.data.mutators.size(); j++) {
                         tempchars_mutators.push_back(loaded_plugin.data.mutators[j].name.c_str());
                     }
+                    for (int j = 0; j < loaded_plugin.data.variables.size(); j++) {
+                        tempchars_variables.push_back(loaded_plugin.data.variables[j].name.c_str());
+                    }
                 }
                 deletefile_set_pos = false;
-                ImGui::SetNextWindowSize({ 300, 365 });
+                ImGui::SetNextWindowSize({ 300, 435 });
                 if (ImGui::BeginPopupModal("Delete file", &deletefile, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                     if (delete_procedure != -1 && !active[0]) {
                         delete_globaltrigger = -1;
@@ -3704,6 +3851,7 @@ int main() {
                         delete_animation = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[0] = true;
                         active[1] = false;
                         active[2] = false;
@@ -3713,6 +3861,7 @@ int main() {
                         active[6] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_globaltrigger != -1 && !active[1]) {
                         delete_procedure = -1;
@@ -3723,6 +3872,7 @@ int main() {
                         delete_animation = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[1] = true;
                         active[0] = false;
                         active[2] = false;
@@ -3732,6 +3882,7 @@ int main() {
                         active[6] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_category != -1 && !active[2]) {
                         delete_procedure = -1;
@@ -3742,6 +3893,7 @@ int main() {
                         delete_animation = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[2] = true;
                         active[1] = false;
                         active[0] = false;
@@ -3751,6 +3903,7 @@ int main() {
                         active[6] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_datalist != -1 && !active[3]) {
                         delete_procedure = -1;
@@ -3761,6 +3914,7 @@ int main() {
                         delete_animation = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[3] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3770,6 +3924,7 @@ int main() {
                         active[6] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_api != -1 && !active[4]) {
                         delete_procedure = -1;
@@ -3780,6 +3935,7 @@ int main() {
                         delete_animation = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[5] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3789,6 +3945,7 @@ int main() {
                         active[6] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_animation != -1 && !active[5]) {
                         delete_procedure = -1;
@@ -3799,6 +3956,7 @@ int main() {
                         delete_api = -1;
                         delete_modelement = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[6] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3808,6 +3966,7 @@ int main() {
                         active[5] = false;
                         active[7] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_modelement != -1 && !active[6]) {
                         delete_procedure = -1;
@@ -3818,6 +3977,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_mutator = -1;
+                        delete_variable = -1;
                         active[7] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3827,6 +3987,7 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[8] = false;
+                        active[9] = false;
                     }
                     else if (delete_mutator != -1 && !active[7]) {
                         delete_procedure = -1;
@@ -3837,6 +3998,7 @@ int main() {
                         delete_api = -1;
                         delete_animation = -1;
                         delete_modelement = -1;
+                        delete_variable = -1;
                         active[8] = true;
                         active[2] = false;
                         active[1] = false;
@@ -3846,7 +4008,29 @@ int main() {
                         active[5] = false;
                         active[6] = false;
                         active[7] = false;
+                        active[9] = false;
                     }
+                    else if (delete_variable != -1 && !active[8]) {
+                        delete_procedure = -1;
+                        delete_globaltrigger = -1;
+                        delete_category = -1;
+                        delete_translation = -1;
+                        delete_datalist = -1;
+                        delete_api = -1;
+                        delete_animation = -1;
+                        delete_modelement = -1;
+                        delete_mutator = -1;
+                        active[9] = true;
+                        active[2] = false;
+                        active[1] = false;
+                        active[0] = false;
+                        active[4] = false;
+                        active[3] = false;
+                        active[5] = false;
+                        active[6] = false;
+                        active[7] = false;
+                        active[8] = false;
+                        }
 
                     ImGui::Text("Procedures");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
@@ -3875,6 +4059,9 @@ int main() {
                     ImGui::Text("Mutators");
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::ListBox("mutators", &delete_mutator, tempchars_mutators.data(), loaded_plugin.data.mutators.size());
+                    ImGui::Text("Variables");
+                    ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+                    ImGui::ListBox("variables", &delete_variable, tempchars_variables.data(), loaded_plugin.data.variables.size());
 
                     if (delete_procedure != -1) {
                         if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name)]) != open_tab_names.end())
@@ -3930,18 +4117,30 @@ int main() {
                         else
                             file_open = false;
                     }
+                    else if (delete_variable != -1) {
+                        if (std::find(open_tab_names.begin(), open_tab_names.end(), loaded_plugin.data.filenames[IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.variables[delete_variable].name)]) != open_tab_names.end())
+                            file_open = true;
+                        else
+                            file_open = false;
+                    }
 
                     ImGui::SetCursorPosX(100);
                     if (ImGui::Button("Delete", { 100, 30 })) {
                         if (delete_procedure != -1 && !file_open) {
-                            fs::remove("plugins/" + loaded_plugin.data.name + "/procedures/" + loaded_plugin.data.procedures[delete_procedure].name + ".txt");
+                            if (fs::exists("plugins/" + loaded_plugin.data.name + "/procedures/" + loaded_plugin.data.procedures[delete_procedure].name + ".txt"))
+                                fs::remove("plugins/" + loaded_plugin.data.name + "/procedures/" + loaded_plugin.data.procedures[delete_procedure].name + ".txt");
+                            else
+                                fs::remove("plugins/" + loaded_plugin.data.name + "/procedures/" + loaded_plugin.data.procedures[delete_procedure].name + ".json");
                             loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.procedures[delete_procedure].name));
                             loaded_plugin.data.procedures.erase(loaded_plugin.data.procedures.begin() + delete_procedure);
                             tempchars_procedures.erase(tempchars_procedures.begin() + delete_procedure);
                         }
                         else if (delete_globaltrigger != -1 && !file_open) {
                             if (!loaded_plugin.data.globaltriggers[delete_globaltrigger].manual_code)
-                                fs::remove("plugins/" + loaded_plugin.data.name + "/triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + ".txt");
+                                if (fs::exists("plugins/" + loaded_plugin.data.name + "/triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + ".txt"))
+                                    fs::remove("plugins/" + loaded_plugin.data.name + "/triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + ".txt");
+                                else
+                                    fs::remove("plugins/" + loaded_plugin.data.name + "/triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + ".json");
                             else {
                                 fs::remove("plugins/" + loaded_plugin.data.name + "/manual_triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + ".txt");
                                 fs::remove("plugins/" + loaded_plugin.data.name + "/manual_triggers/" + loaded_plugin.data.globaltriggers[delete_globaltrigger].name + " - json.txt");
@@ -3997,7 +4196,13 @@ int main() {
                             loaded_plugin.data.mutators.erase(loaded_plugin.data.mutators.begin() + delete_mutator);
                             tempchars_mutators.erase(tempchars_mutators.begin() + delete_mutator);
                         }
-                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1 || delete_api != -1 || delete_animation != -1 || delete_modelement != -1 || delete_mutator != -1) && !file_open) {
+                        else if (delete_variable != -1 && !file_open) {
+                            fs::remove("plugins/" + loaded_plugin.data.name + "/variables/" + loaded_plugin.data.variables[delete_variable].name + ".json");
+                            loaded_plugin.data.filenames.erase(loaded_plugin.data.filenames.begin() + IndexOf(loaded_plugin.data.filenames, loaded_plugin.data.variables[delete_variable].name));
+                            loaded_plugin.data.variables.erase(loaded_plugin.data.variables.begin() + delete_variable);
+                            tempchars_variables.erase(tempchars_variables.begin() + delete_variable);
+                        }
+                        if ((delete_procedure != -1 || delete_globaltrigger != -1 || delete_category != -1 || delete_datalist != -1 || delete_translation != -1 || delete_api != -1 || delete_animation != -1 || delete_modelement != -1 || delete_mutator != -1 || delete_variable != -1) && !file_open) {
                             SavePlugin(&loaded_plugin);
                             deletefile = false;
                         }
@@ -4013,36 +4218,41 @@ int main() {
                 }
             }
             else {
+                if (!deletefile_set_pos) {
+                    delete_procedure = -1;
+                    delete_globaltrigger = -1;
+                    delete_category = -1;
+                    delete_translation = -1;
+                    delete_api = -1;
+                    delete_animation = -1;
+                    delete_modelement = -1;
+                    delete_mutator = -1;
+                    delete_variable = -1;
+                    active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false; active[5] = false; active[6] = false; active[7] = false; active[8] = false; active[9] = false;
+                    if (!tempchars_procedures.empty())
+                        tempchars_procedures.clear();
+                    if (!tempchars_globaltriggers.empty())
+                        tempchars_globaltriggers.clear();
+                    if (!tempchars_categories.empty())
+                        tempchars_categories.clear();
+                    if (!tempchars_datalists.empty())
+                        tempchars_datalists.clear();
+                    if (!tempchars_translations.empty())
+                        tempchars_translations.clear();
+                    if (!tempchars_apis.empty())
+                        tempchars_apis.clear();
+                    if (!tempchars_animations.empty())
+                        tempchars_animations.clear();
+                    if (!tempchars_modelements.empty())
+                        tempchars_modelements.clear();
+                    if (!tempchars_mutators.empty())
+                        tempchars_mutators.clear();
+                    if (!tempchars_variables.empty())
+                        tempchars_variables.clear();
+                    if (file_open)
+                        file_open = false;
+                }
                 deletefile_set_pos = true;
-                delete_procedure = -1;
-                delete_globaltrigger = -1;
-                delete_category = -1;
-                delete_translation = -1;
-                delete_api = -1;
-                delete_animation = -1;
-                delete_modelement = -1;
-                delete_mutator = -1;
-                active[0] = false; active[1] = false; active[2] = false; active[3] = false; active[4] = false; active[5] = false; active[6] = false; active[7] = false; active[8] = false;
-                if (!tempchars_procedures.empty())
-                    tempchars_procedures.clear();
-                if (!tempchars_globaltriggers.empty())
-                    tempchars_globaltriggers.clear();
-                if (!tempchars_categories.empty())
-                    tempchars_categories.clear();
-                if (!tempchars_datalists.empty())
-                    tempchars_datalists.clear();
-                if (!tempchars_translations.empty())
-                    tempchars_translations.clear();
-                if (!tempchars_apis.empty())
-                    tempchars_apis.clear();
-                if (!tempchars_animations.empty())
-                    tempchars_animations.clear();
-                if (!tempchars_modelements.empty())
-                    tempchars_modelements.clear();
-                if (!tempchars_mutators.empty())
-                    tempchars_mutators.clear();
-                if (file_open)
-                    file_open = false;
             }
 
             if (addfile) {
@@ -4055,13 +4265,13 @@ int main() {
                 ImGui::SetNextWindowSize({ 300, 120 }, ImGuiCond_Once);
                 if (ImGui::BeginPopupModal("New file", &addfile, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation\0API\0Animation\0Mod Element\0Mutator");
+                    ImGui::Combo(" ", &combo_item, "Procedure\0Global Trigger\0Blockly Category\0Datalist\0Translation\0API\0Animation\0Mod Element\0Mutator\0Variable");
                     ImGui::Spacing();
                     ImGui::AlignTextToFramePadding();
                     ImGui::Text("Name: "); ImGui::SameLine();
                     ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                     ImGui::PushID(1);
-                    ImGui::InputText(" ", &file_name, (combo_item == 3 ? ImGuiInputTextFlags_CharsNoBlank : ImGuiInputTextFlags_None));
+                    ImGui::InputText(" ", &file_name, ((combo_item == 3 || combo_item == 9) ? ImGuiInputTextFlags_CharsNoBlank : ImGuiInputTextFlags_None));
                     ImGui::PopID();
                     ImGui::Spacing();
                     ImGui::SetCursorPosX(100);
@@ -4143,6 +4353,14 @@ int main() {
                                 loaded_plugin.data.mutators.push_back(mt);
                                 window.mutator = &loaded_plugin.data.mutators[loaded_plugin.data.mutators.size() - 1];
                             }
+                            else if (combo_item == 9) {
+                                window.type = VARIABLE;
+                                Plugin::Variable var;
+                                var.name = file_name;
+                                loaded_plugin.data.variables.push_back(var);
+                                loaded_plugin.VariableTypes.push_back(file_name);
+                                window.variable = &loaded_plugin.data.variables[loaded_plugin.data.variables.size() - 1];
+                            }
                             loaded_plugin.data.filenames.push_back(file_name);
                             open_tabs.push_back(window);
                             open_tab_names.push_back(file_name);
@@ -4160,11 +4378,13 @@ int main() {
                 }
             }
             else {
+                if (!addfile_set_pos) {
+                    if (combo_item != 0)
+                        combo_item = 0;
+                    if (!file_name.empty())
+                        file_name.clear();
+                }
                 addfile_set_pos = true;
-                if (combo_item != 0)
-                    combo_item = 0;
-                if (!file_name.empty())
-                    file_name.clear();
             }
 
             if (addversion) {
@@ -4206,6 +4426,9 @@ int main() {
                     else if (versiontype == MODELEMENT) {
                         should_add = std::find(open_tabs[current_tab].modelement->version_names.begin(), open_tabs[current_tab].modelement->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].modelement->version_names.end();
                     }
+                    else if (versiontype == VARIABLE) {
+                        should_add = std::find(open_tabs[current_tab].variable->version_names.begin(), open_tabs[current_tab].variable->version_names.end(), version_mc + GetGenerator(generator_type)) == open_tabs[current_tab].variable->version_names.end();
+                    }
                     else {
                         should_add = true;
                     }
@@ -4241,6 +4464,11 @@ int main() {
                             }
                             addversion = false;
                         }
+                        else if (versiontype == VARIABLE) {
+                            open_tabs[current_tab].variable->versions.push_back({ version_mc, GetGenerator(generator_type) });
+                            open_tabs[current_tab].variable->version_names.push_back(version_mc + GetGenerator(generator_type));
+                            addversion = false;
+                        }
                     }
                     if (tooltip && ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
@@ -4256,11 +4484,13 @@ int main() {
                 }
             }
             else {
+                if (!addversion_set_pos) {
+                    if (!(generator_type == 0))
+                        generator_type = 0;
+                    if (!version_mc.empty())
+                        version_mc.clear();
+                }
                 addversion_set_pos = true;
-                if (!(generator_type == 0))
-                    generator_type = 0;
-                if (!version_mc.empty())
-                    version_mc.clear();
             }
 
             if (addcomp) {
@@ -5221,6 +5451,23 @@ int main() {
                                 }
                             }
                         }
+                        if (ImGui::CollapsingHeader("Variables")) {
+                            if (!loaded_plugin.data.variables.empty()) {
+                                for (Plugin::Variable& var : loaded_plugin.data.variables) {
+                                    ImGui::Bullet();
+                                    ImGui::SameLine();
+                                    if (ImGui::MenuItem(var.name.c_str())) {
+                                        if (std::find(open_tab_names.begin(), open_tab_names.end(), var.name) == open_tab_names.end()) {
+                                            TabWindow window;
+                                            window.type = VARIABLE;
+                                            window.variable = &var;
+                                            open_tabs.push_back(window);
+                                            open_tab_names.push_back(var.name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         ImGui::EndTabItem();
                     }
                     if (ImGui::BeginTabItem("Overrides")) {
@@ -5680,7 +5927,7 @@ int main() {
                                 }
                                 break;
                             }
-                            case PROCEDURE: 
+                            case PROCEDURE:
                             {
                                 if (!open_tabs[i].procedure->manual_code) {
                                     float length = 219;
@@ -5965,7 +6212,7 @@ int main() {
 
                                     ImGui::Text("Json template");
                                     ImGui::PushID(3);
-                                    ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->manual_json , { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
+                                    ImGui::InputTextMultiline(" ", &open_tabs[i].procedure->manual_json, { ImGui::GetColumnWidth(), 400 }, ImGuiInputTextFlags_AllowTabInput);
                                     ImGui::PopID();
                                     ImGui::Spacing();
                                 }
@@ -5980,7 +6227,7 @@ int main() {
                                         std::string tabname_pc = open_tabs[i].procedure->versions[l].first + " " + open_tabs[i].procedure->versions[l].second;
                                         if (ImGui::BeginTabItem(tabname_pc.c_str())) {
                                             current_version = l + sumOfString(open_tabs[i].procedure->name);
-                                            if (current_version != old_current_version )
+                                            if (current_version != old_current_version)
                                                 procedure_editor.SetText(open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]]);
                                             procedure_editor.Render((tabname_pc + std::to_string(i)).c_str(), false, { ImGui::GetColumnWidth(), 400 }, true);
                                             if (open_tabs[i].procedure->code[open_tabs[i].procedure->versions[l]] != procedure_editor.GetText())
@@ -6206,12 +6453,71 @@ int main() {
                                 ImGui::Text("Mutator variable type: ");
                                 NextElement(200);
                                 ImGui::PushID(4);
-                                ImGui::Combo(" ", &open_tabs[i].mutator->variable_int, "Block\0Direction\0Entity\0Item\0Boolean\0Number\0Text\0");
+                                if (ImGui::BeginCombo(" ", loaded_plugin.VariableTypes[open_tabs[i].mutator->variable_int].c_str())) {
+                                    for (int k = 0; k < loaded_plugin.VariableTypes.size(); k++) {
+                                        if (ImGui::Selectable(loaded_plugin.VariableTypes[k].c_str(), k == open_tabs[i].mutator->variable_int)) {
+                                            open_tabs[i].mutator->variable_int = k;
+                                        }
+                                    }
+                                    ImGui::EndCombo();
+                                }
                                 ImGui::PopID();
 
                                 if (ImGui::Button("Copy code")) {
                                     SetClipboardText("<#list input_list$entry as entry>\n\n</#list>");
                                 }
+                                break;
+                            }
+                            case VARIABLE: 
+                            {
+                                ImGui::Spacing();
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Variable name: ");
+                                NextElement(125);
+                                ImGui::InputText(" ", &open_tabs[i].variable->name, ImGuiInputTextFlags_ReadOnly);
+
+                                ImGui::AlignTextToFramePadding();
+                                ImGui::Text("Variable color: ");
+                                NextElement(125);
+                                float var_cols[] = { open_tabs[i].variable->color.x, open_tabs[i].variable->color.y, open_tabs[i].variable->color.z };
+                                ImGui::PushID(2);
+                                ImGui::ColorEdit3(" ", var_cols);
+                                ImGui::PopID();
+                                open_tabs[i].variable->color = { var_cols[0], var_cols[1], var_cols[2], 1 };
+                                ImGui::Spacing();
+
+                                ImGui::Text("Variable mappings");
+                                if (ImGui::BeginTabBar("varmaps", ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_Reorderable)) {
+                                    if (ImGui::TabItemButton("+")) {
+                                        addversion = true;
+                                        versiontype = VARIABLE;
+                                    }
+                                    for (const std::pair<std::string, std::string> version : open_tabs[i].variable->versions) {
+                                        std::string tabname = version.first + " " + version.second;
+                                        if (ImGui::BeginTabItem(tabname.c_str())) {
+
+                                            ImGui::AlignTextToFramePadding();
+                                            ImGui::Text("Variable class: ");
+                                            NextElement(125);
+                                            ImGui::PushID(3);
+                                            ImGui::InputText(" ", &open_tabs[i].variable->mappings[version].first, ImGuiInputTextFlags_CharsNoBlank);
+                                            ImGui::PopID();
+
+                                            ImGui::AlignTextToFramePadding();
+                                            ImGui::Text("Default value: ");
+                                            NextElement(125);
+                                            ImGui::PushID(4);
+                                            ImGui::InputText(" ", &open_tabs[i].variable->mappings[version].second);
+                                            ImGui::PopID();
+
+                                            ImGui::EndTabItem();
+                                        }
+                                    }
+                                    ImGui::EndTabBar();
+                                }
+
+                                break;
                             }
                             }
 

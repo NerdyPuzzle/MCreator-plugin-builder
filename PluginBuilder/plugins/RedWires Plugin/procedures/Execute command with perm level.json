@@ -1,0 +1,50 @@
+{
+  "name": "Execute command with perm level",
+  "translation_key": "Execute command / %1 at x: %2 y: %3 z: %4 with permission level %5",
+  "type": 0,
+  "color": [
+    0.6470590233802795,
+    0.5254899859428406,
+    0.35686299204826355,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": true,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "command": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "clear"
+    },
+    "x": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "y": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "z": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "permlevel": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 4.0
+    }
+  }
+}

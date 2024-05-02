@@ -3,42 +3,15 @@
   "cancelable": true,
   "side": 0,
   "provided_dependencies": [
-    "X",
-    "Y",
-    "Z",
-    "ENTITY",
-    "SOURCEENTITY",
-    "IMMEDIATESOURCEENTITY",
-    "WORLD",
-    "ITEMSTACK",
-    "BLOCKSTATE",
-    "DIRECTION",
-    "ADVANCEMENT",
-    "DAMAGESOURCE",
-    "seconditem",
-    "amount"
+    "fwafw"
   ],
   "custom_dependency_types": [
-    "Item",
-    "Number"
+    "Block"
   ],
   "versions": {
     "1.19.2_Forge": {
       "event": "ges",
-      "X": "ghehes",
-      "Y": "hjdrjdr",
-      "Z": "jhdrfjdrf",
-      "ENTITY": "hjdrghsde",
-      "SOURCEENTITY": "gshsdeh",
-      "IMMEDIATESOURCEENTITY": "jndrftj",
-      "WORLD": "drjdrhj",
-      "ITEMSTACK": "ghesghes",
-      "BLOCKSTATE": "dhshejdr",
-      "DIRECTION": "jjmkdrftkjd",
-      "ADVANCEMENT": "rfjndrfhjndr",
-      "DAMAGESOURCE": "fwsagwawasgwsag",
-      "seconditem": "this works?",
-      "amount": "dtfhftj"
+      "fwafw": "segseh"
     }
   }
 }

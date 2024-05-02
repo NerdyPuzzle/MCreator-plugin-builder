@@ -1,0 +1,21 @@
+{
+  "name": "test",
+  "translation_key": "",
+  "type": 0,
+  "color": [
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "category": "Block data",
+  "category_index": 0,
+  "world_dependency": false,
+  "components": {
+    "AAAAAAAAAA": {
+      "type": 0,
+      "variable_type": "Block",
+      "variable_index": 0
+    }
+  }
+}

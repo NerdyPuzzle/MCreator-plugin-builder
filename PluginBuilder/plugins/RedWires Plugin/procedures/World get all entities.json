@@ -1,0 +1,9 @@
+{
+  "name": "World get all entities",
+  "translation_key": "For each entity in the current world as %1 %3 do %2",
+  "json": "{\n  \"args0\": [\n    {\n      \"type\": \"input_value\",\n      \"name\": \"_placeholder\",\n      \"check\": \"Entity\"\n    },\n    {\n      \"type\": \"input_statement\",\n      \"name\": \"foreach\"\n    },\n    {\n      \"type\": \"field_image\",\n      \"src\": \"./res/server.png\",\n      \"width\": \"8\",\n      \"height\": \"24\"\n    }\n  ],\n  \"extensions\": [\n    \"is_custom_loop\"\n  ],\n  \"inputsInline\": true,\n  \"previousStatement\": null,\n  \"nextStatement\": null,\n  \"colour\": \"#a5865b\",\n  \"mcreator\": {\n    \"toolbox_id\": \"actions\",\n    \"toolbox_init\": [\n      \"<value name=\\\"_placeholder\\\"><block deletable=\\\"false\\\" movable=\\\"false\\\" enabled=\\\"false\\\" type=\\\"entity_iterator\\\"></block></value>\"\n    ],\n    \"statements\": [\n      {\n        \"name\": \"foreach\",\n        \"provides\": [\n          {\n            \"name\": \"entityiterator\",\n            \"type\": \"entity\"\n          }\n        ]\n      }\n    ],\n    \"dependencies\": [\n      {\n        \"name\": \"world\",\n        \"type\": \"world\"\n      }\n    ]\n  }\n}",
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ]
+}

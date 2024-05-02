@@ -1,0 +1,10 @@
+<#include "mcitems.ftl">
+{
+	BlockState _block1 = ${mappedBlockToBlockStateCode(input$block1)};
+	BlockState _block2 = ${mappedBlockToBlockStateCode(input$block2)};
+	for(Property<?> property : _block1.getBlock().getStateDefinition().getProperties()) {
+         if (_block2.hasProperty(property)) {
+            _block2 = _block2.setValue((Property)property, _block1.getValue(property));
+         }
+      }
+}

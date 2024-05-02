@@ -1,0 +1,3 @@
+if (event instanceof PlayerEvent.BreakSpeed _speed) {
+	_speed.setNewSpeed(${opt.toFloat(input$speed)});
+}

@@ -1,0 +1,1 @@
+current<#if field$startfromzero == "FALSE"> + 1</#if>

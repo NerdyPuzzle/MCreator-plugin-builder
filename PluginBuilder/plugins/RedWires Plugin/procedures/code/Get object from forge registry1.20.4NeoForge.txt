@@ -1,0 +1,14 @@
+{
+	${field$classtype} _regobject = null;
+	String _id = ${input$registryid}.replace(" ", "").toLowerCase();
+	Object[] _regarray = ${generator.map(field$reg, "forgeregs")}.entrySet().toArray();
+	for (Object e : _regarray) {
+		Map.Entry _entry = (Map.Entry) e;
+		ResourceLocation _regid = ((ResourceKey) _entry.getKey()).location();
+		if (_regid.toString().equals(_id) || _regid.getPath().equals(_id)) {
+			_regobject = (${field$classtype}) _entry.getValue();
+			${statement$stuff2do}
+			break;
+		}
+	}
+}

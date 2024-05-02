@@ -1,0 +1,54 @@
+On anvil updated
+Set damage
+Get invulnerable time
+Set invulnerable time
+Copy block properties
+Get distance from two entities
+Set level cost
+Set material cost
+Set anvil output
+Item output taken from anvil
+Get distance from two positions
+Set break chance
+Enderman teleports
+Entity force add effect
+forgeregs
+regclasses
+Get object from forge registry
+Block get name
+Text split foreach
+RedWires Plugin
+Actions
+Data
+Entity line of sight check
+Get entity from UUID
+Untame entity
+Entity remove target
+Get mod display name from id
+Get mod version from id
+Sound played from entity
+Set sound event
+Compare sounds
+Sound played at position
+Is entity moving
+Player harvest check tick
+Set can harvest
+Player block speed tick
+Event-specific Actions
+Set break speed
+Entity dimension string
+World dimension string
+Repeat with tick wait
+Break timed loop
+Entity get NoAI
+Entity set NoAI
+Entity execute command with perm level
+Execute command with perm level
+Entity get permission level
+Deal damage custom source
+StringIterator
+Entity create clone
+Timed loop iterator
+Change tick wait
+World get all entities
+Player starts using item

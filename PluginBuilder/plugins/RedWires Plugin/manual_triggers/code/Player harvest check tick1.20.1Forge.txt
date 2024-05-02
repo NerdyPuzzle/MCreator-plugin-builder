@@ -1,0 +1,16 @@
+<#include "procedures.java.ftl">
+@Mod.EventBusSubscriber public class ${name}Procedure {
+	@SubscribeEvent public static void harvestCheckEvent(PlayerEvent.HarvestCheck event) {
+		<#assign dependenciesCode><#compress>
+			<@procedureDependenciesCode dependencies, {
+			"x": "event.getEntity().level().clip(new ClipContext(event.getEntity().getEyePosition(1f), event.getEntity().getEyePosition(1f).add(event.getEntity().getViewVector(1f).scale(((LivingEntity) event.getEntity()).getAttribute(ForgeMod.BLOCK_REACH.get()).getBaseValue())), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, event.getEntity())).getBlockPos().getX()",
+			"y": "event.getEntity().level().clip(new ClipContext(event.getEntity().getEyePosition(1f), event.getEntity().getEyePosition(1f).add(event.getEntity().getViewVector(1f).scale(((LivingEntity) event.getEntity()).getAttribute(ForgeMod.BLOCK_REACH.get()).getBaseValue())), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, event.getEntity())).getBlockPos().getY()",
+			"z": "event.getEntity().level().clip(new ClipContext(event.getEntity().getEyePosition(1f), event.getEntity().getEyePosition(1f).add(event.getEntity().getViewVector(1f).scale(((LivingEntity) event.getEntity()).getAttribute(ForgeMod.BLOCK_REACH.get()).getBaseValue())), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, event.getEntity())).getBlockPos().getZ()",
+			"blockstate": "event.getTargetBlock()",
+			"world": "event.getEntity().level()",
+			"entity": "event.getEntity()",
+			"canHarvest": "event.canHarvest()"
+			}/>
+		</#compress></#assign>
+		execute(event<#if dependenciesCode?has_content>,</#if>${dependenciesCode});
+	}

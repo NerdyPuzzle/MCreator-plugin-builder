@@ -1,0 +1,24 @@
+{
+  "name": "Set sound event",
+  "translation_key": "Change sound to %1 (any sound played event)",
+  "type": 0,
+  "color": [
+    0.5019609928131104,
+    0.6470590233802795,
+    0.35686299204826355,
+    1.0
+  ],
+  "category": "Event-specific Actions",
+  "category_index": 25,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "sound": {
+      "type": 4,
+      "datalist": "sound"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+RedWires Plugin
+redwires-plugin
+1.2.6
+RedWirePlatinum
+Mcreator, but mostly with procedures I use for my mod :)
+Made with MCreator plugin builder by NerdyPuzzle

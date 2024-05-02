@@ -1,0 +1,3 @@
+<#assign sound = generator.map(field$sound, "sounds")?replace("CUSTOM:", "${modid}:")>
+
+(event instanceof PlayLevelSoundEvent _sound ? _sound.getSound().is(new ResourceLocation("${sound}")) : false)

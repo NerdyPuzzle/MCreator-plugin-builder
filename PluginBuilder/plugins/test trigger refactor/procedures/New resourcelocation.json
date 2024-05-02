@@ -1,0 +1,28 @@
+{
+  "name": "New resourcelocation",
+  "translation_key": "New resource location from path %1",
+  "type": 1,
+  "color": [
+    0.4156862795352936,
+    0.3764705955982208,
+    0.22745098173618317,
+    1.0
+  ],
+  "category": "Block data",
+  "category_index": 0,
+  "world_dependency": false,
+  "type_index": 8,
+  "versions": [
+    "1.19.2_Forge",
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "path": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "minecraft:textures/item/diamond.png"
+    }
+  }
+}

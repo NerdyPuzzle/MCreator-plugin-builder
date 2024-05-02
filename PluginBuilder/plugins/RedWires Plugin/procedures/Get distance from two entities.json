@@ -1,0 +1,31 @@
+{
+  "name": "Get distance from two entities",
+  "translation_key": "Get distance between %1 and %2",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.4039219915866852,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": false,
+  "type_index": 5,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    },
+    "sourceentity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    }
+  }
+}

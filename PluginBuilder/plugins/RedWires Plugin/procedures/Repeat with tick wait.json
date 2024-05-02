@@ -1,0 +1,9 @@
+{
+  "name": "Repeat with tick wait",
+  "translation_key": "Repeat %1 times as %4 with tick wait time %2 do %3",
+  "json": "{\n  \"args0\": [\n    {\n      \"type\": \"input_value\",\n      \"name\": \"times\",\n      \"check\": \"Number\"\n    },\n    {\n      \"type\": \"input_value\",\n      \"name\": \"tickwait\",\n      \"check\": \"Number\"\n    },\n    {\n      \"type\": \"input_statement\",\n      \"name\": \"foreach\"\n    },\n    {\n      \"type\": \"input_value\",\n      \"name\": \"_placeholder\",\n      \"check\": \"Number\"\n    }\n  ],\n  \"inputsInline\": true,\n  \"previousStatement\": null,\n  \"nextStatement\": null,\n  \"colour\": \"#5ba55b\",\n  \"mcreator\": {\n    \"toolbox_id\": \"actions\",\n    \"toolbox_init\": [\n      \"<value name=\\\"times\\\"><block type=\\\"math_number\\\"><field name=\\\"NUM\\\">5</field></block></value>\",\n      \"<value name=\\\"tickwait\\\"><block type=\\\"math_number\\\"><field name=\\\"NUM\\\">1</field></block></value>\",\n      \"<value name=\\\"_placeholder\\\"><block deletable=\\\"false\\\" movable=\\\"false\\\" enabled=\\\"false\\\" type=\\\"timed_loop_iterator\\\"></block></value>\"\n    ],\n    \"inputs\": [\n      \"times\",\n      \"tickwait\"\n    ],\n    \"statements\": [\n      {\n        \"name\": \"foreach\",\n        \"disable_local_variables\": true\n      }\n    ]\n  }\n}\n",
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ]
+}

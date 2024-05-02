@@ -1,0 +1,26 @@
+{
+  "name": "Set break chance",
+  "translation_key": "Set break chance to %1 (Item output taken from anvil)",
+  "type": 0,
+  "color": [
+    0.5019609928131104,
+    0.6470590233802795,
+    0.35686299204826355,
+    1.0
+  ],
+  "category": "Event-specific Actions",
+  "category_index": 25,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "chance": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    }
+  }
+}

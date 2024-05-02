@@ -1,0 +1,57 @@
+{
+  "name": "Get distance from two positions",
+  "translation_key": "Get distance between %1 %2 %3 and %4 %5 %6",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.4039219915866852,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": false,
+  "type_index": 5,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "x": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "y": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "z": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "x2": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "y2": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    },
+    "z2": {
+      "type": 0,
+      "variable_type": "Number",
+      "variable_index": 5,
+      "default_value": 0.0
+    }
+  }
+}

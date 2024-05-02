@@ -1,0 +1,15 @@
+<#include "procedures.java.ftl">
+@Mod.EventBusSubscriber public class ${name}Procedure {
+	@SubscribeEvent public static void soundPlayedAtPos(PlayLevelSoundEvent.AtPosition event) {
+		<#assign dependenciesCode><#compress>
+			<@procedureDependenciesCode dependencies, {
+			"x": "event.getPosition().x()",
+			"y": "event.getPosition().y()",
+			"z": "event.getPosition().z()",
+			"volume": "event.getNewVolume()",
+			"pitch": "event.getNewPitch()",
+			"world": "event.getLevel()"
+			}/>
+		</#compress></#assign>
+		execute(event<#if dependenciesCode?has_content>,</#if>${dependenciesCode});
+	}

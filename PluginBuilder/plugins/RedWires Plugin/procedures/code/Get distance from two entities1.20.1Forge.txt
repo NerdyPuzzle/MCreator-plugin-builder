@@ -1,0 +1,1 @@
+(${input$sourceentity}!= null ? ${input$entity}.distanceTo(${input$sourceentity}) : -1)

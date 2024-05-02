@@ -1,0 +1,13 @@
+{
+	String _id = ${input$registryid}.replace(" ", "").toLowerCase();
+	${field$classtype} _regobject = null;
+	Collection<${field$classtype}> _reglist = ${generator.map(field$reg, "forgeregs")}.getValues();
+	for (${field$classtype} _obj : _reglist) {
+		ResourceLocation _regid = ${generator.map(field$reg, "forgeregs")}.getKey(_obj);
+		if (_regid.toString().equals(_id) || _regid.getPath().equals(_id)) {
+			_regobject = _obj;
+			${statement$stuff2do}
+			break;
+		}
+	}
+}

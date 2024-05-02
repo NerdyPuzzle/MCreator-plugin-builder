@@ -1,0 +1,13 @@
+{
+String[] _array = ${input$text}.split(${input$2split});
+	if (_array.length != 0) {	
+		for (String stringiterator : _array) {
+			${statement$foreach}
+ 		}
+	} else {
+		String stringiterator = ${input$text};
+		for (int _yourmother = 0; _yourmother < 1; _yourmother++) {
+			${statement$foreach}
+		}
+	}
+}

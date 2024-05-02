@@ -1,0 +1,26 @@
+{
+  "name": "Entity dimension string",
+  "translation_key": "Get string id of dimension %1 is in",
+  "type": 1,
+  "color": [
+    0.35686299204826355,
+    0.6470590233802795,
+    0.549019992351532,
+    1.0
+  ],
+  "category": "Data",
+  "category_index": 24,
+  "world_dependency": false,
+  "type_index": 6,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "entity": {
+      "type": 0,
+      "variable_type": "Entity",
+      "variable_index": 2
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "Get object from forge registry",
+  "translation_key": "Get object from registry %1 class type: %2 registry id: %3 (Var name: \"_regobject\") %4",
+  "type": 0,
+  "color": [
+    0.4039219915866852,
+    0.35686299204826355,
+    0.6470590233802795,
+    1.0
+  ],
+  "category": "Actions",
+  "category_index": 23,
+  "world_dependency": false,
+  "versions": [
+    "1.20.1_Forge",
+    "1.20.4_NeoForge"
+  ],
+  "components": {
+    "reg": {
+      "type": 4,
+      "datalist": "forgeregs"
+    },
+    "classtype": {
+      "type": 4,
+      "datalist": "regclasses"
+    },
+    "registryid": {
+      "type": 0,
+      "variable_type": "Text",
+      "variable_index": 6,
+      "default_value": "minecraft:sharpness"
+    },
+    "stuff2do": {
+      "type": 5,
+      "disable_local_variables": false
+    }
+  }
+}
